@@ -10,6 +10,16 @@ import Soy from 'metal-soy';
  * Playground component.
  */
 class Playground extends Component {
+	rendered() {
+		that = this;
+		['css', 'html', 'js'].forEach(function(e) {
+			var tArea =
+				that.element.querySelector('.metal-playground-' + e + '-content');
+				var editor = window.ace.edit(tArea);
+    		editor.setTheme("ace/theme/monokai");
+    		editor.getSession().setMode("ace/mode/javascript");
+		})
+	}
 }
 
 Soy.register(Playground, templates);

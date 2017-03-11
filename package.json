@@ -26,7 +26,8 @@
   ],
   "dependencies": {
     "bootstrap": "^3.3.6",
-    "codemirror": "^5.24.2",
+    "codemirror":"~5.24.2",
+    "ace-editor-builds": "^1.2.4",
     "metal": "^2.0.0",
     "metal-component": "^2.0.0",
     "metal-dom": "^2.0.0",
