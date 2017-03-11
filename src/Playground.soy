@@ -1,0 +1,57 @@
+{namespace Playground}
+
+/**
+ * This renders the main element.
+ */
+{template .render}
+  <div class="metal-playground">
+		<div class="row">
+			{call .pane}
+				{param title: 'HTML' /}
+				{param type: 'html' /}
+			{/call}
+			{call .pane}
+				{param title: 'CSS' /}
+				{param type: 'css' /}
+			{/call}
+			{call .pane}
+				{param title: 'MetalJS' /}
+				{param type: 'js' /}
+			{/call}
+		</div>
+		<div class="row">
+			<div class="metal-playground-result col-md-12">
+				{call .result}
+				{/call}
+			</div>
+		</div>
+  </div>
+{/template}
+
+{template .pane}
+	{@param type: string}
+	{@param title: string}
+	<div class="metal-playground-pane col-md-4">
+		<div class="metal-playground-header">{$title}</div>
+		<div class="metal-playground-{$type}-content"></div>
+	</div>
+{/template}
+
+{template .result}
+<iframe>
+	/** <!DOCTYPE html> There's no constructor registered for the component named !DOCTYPE. **/
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8">
+			<title>Playground result</title>
+
+			<link rel="stylesheet" href="../node_modules/bootstrap/dist/css/bootstrap.css">
+			<link rel="stylesheet" href="../build/playground.css">
+
+			<script src="../build/globals/playground.js"></script>
+		</head>
+		<body>
+		</body>
+	</html>
+</iframe>
+{/template}
