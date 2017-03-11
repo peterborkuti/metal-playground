@@ -26,6 +26,7 @@
   ],
   "dependencies": {
     "bootstrap": "^3.3.6",
+    "codemirror": "^5.24.2",
     "metal": "^2.0.0",
     "metal-component": "^2.0.0",
     "metal-dom": "^2.0.0",
