@@ -14,6 +14,13 @@ import SampleList from './SampleList';
  * Playground component.
  */
 class Playground extends Component {
+	getAceMode(mode) {
+		if (mode === 'js') {
+			mode = 'javascript'
+		};
+
+		return 'ace/mode/' + mode;
+	}
 
 	sampleSelected() {
 		var that = this;
@@ -44,7 +51,7 @@ class Playground extends Component {
 				that.element.querySelector('.metal-playground-' + e + '-content');
 				var editor = window.ace.edit(tArea);
 				editor.setTheme("ace/theme/monokai");
-    		editor.getSession().setMode("ace/mode/javascript");
+    		editor.getSession().setMode(that.getAceMode(e));
 				that.editor[e] = editor;
 		})
 	}
