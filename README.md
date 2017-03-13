@@ -1,5 +1,15 @@
 # metal-playground
 
+[Test it here](demos/webtest.html)
+Unfortunately, I could not finish it, the RESULT Pane cold not load metaljs, so the
+scripts can not be run.
+Probably there is a trick here, but I tried at least 10 different things.
+
+The samples are loaded from a metal-playground-samples repository.
+There is no save function and the result pane is refreshing only when loading a sample.
+These can be solved easily, but it is meaningless without running metal js in the iframe,
+so I did not bother with it.
+
 Metal's playground
 
 ## Setup
