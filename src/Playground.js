@@ -14,12 +14,39 @@ import SampleList from './SampleList';
  * Playground component.
  */
 class Playground extends Component {
+	getIFrameDocument(element) {
+		var iframe = element.querySelector('.metal-playground-result-content iframe');
+		return iframe.contentDocument || iframe.contentWindow.document;
+	}
+
 	getAceMode(mode) {
 		if (mode === 'js') {
 			mode = 'javascript'
 		};
 
 		return 'ace/mode/' + mode;
+	}
+
+	renderSample() {
+		var css = this.editor.css.getValue();
+		var js = '<script>' + this.editor.js.getValue() + '</script>';
+		var html = this.editor.html.getValue();
+
+		if (!this.iframeDocument) {
+			var iframeDocument = this.getIFrameDocument(this.element);
+			this.iframeDocument = iframeDocument;
+		}
+
+		this.iframeDocument.querySelector('body').innerHTML = html + js;
+
+		var head = this.iframeDocument.querySelector('head');
+		var style = head.querySelector('style');
+		if (style) {
+			head.removeChild(style);
+		}
+		style = this.iframeDocument.createElement('style');
+		style.innerHTML = css;
+		head.appendChild(style);
 	}
 
 	sampleSelected() {
@@ -31,6 +58,8 @@ class Playground extends Component {
 			['css', 'html', 'js'].forEach(function(e) {
 				that.editor[e].setValue(selectedSample[e]);
 			});
+
+			this.renderSample();
 		}
 	}
 
@@ -53,7 +82,7 @@ class Playground extends Component {
 				editor.setTheme("ace/theme/monokai");
     		editor.getSession().setMode(that.getAceMode(e));
 				that.editor[e] = editor;
-		})
+		});
 	}
 }
 
