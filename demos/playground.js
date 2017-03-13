@@ -3294,7 +3294,7 @@ babelHelpers;
 				idocument.write("<html>");
 				idocument.write("<head>");
 				idocument.write('<link rel="stylesheet" href="' + this.bootstrap_link + '">');
-				//idocument.write('<script src="' + this.metal_link + '"></script>');
+				idocument.write('<script src="' + this.metal_link + '"></script>');
 				idocument.write("</head>");
 				idocument.write("<body>");
 				idocument.write("<script>");
@@ -3356,8 +3356,8 @@ babelHelpers;
 
 	IFrame.STATE = {
 		metal_link: {
-			//value : 'https://metal.github.io/metal.js-standalone/bin/metal.bundle.js'
-			value: 'https://code.jquery.com/jquery-3.1.1.min.js'
+			value: 'https://metal.github.io/metal.js-standalone/bin/metal.bundle.js'
+			//value: 'https://code.jquery.com/jquery-3.1.1.min.js'
 		},
 		bootstrap_link: {
 			value: 'https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css'
