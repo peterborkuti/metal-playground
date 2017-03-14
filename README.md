@@ -3,7 +3,13 @@
 [Test it here](demos/webtest.html)
 Unfortunately, I could not finish it, the RESULT Pane cold not load metaljs, so the
 scripts can not be run.
+
 Probably there is a trick here, but I tried at least 10 different things.
+
+Now I know what the trick is: iframe should be re-created in every change as jotted
+do this:
+https://github.com/ghinda/jotted/blob/master/src/plugins/render.js
+However I wanted to avoid this to not load js frameworks every time.
 
 The samples are loaded from a metal-playground-samples repository.
 There is no save function and the result pane is refreshing only when loading a sample.
