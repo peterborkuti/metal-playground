@@ -4,6 +4,21 @@ import State from 'metal-state';
 
 class IFrame extends State {
 
+	constructor(opt_config, opt_obj, opt_context) {
+		super(opt_config, opt_obj, opt_context);
+
+		// catch domready events from the iframe
+		window.addEventListener('message', this.domready.bind(this));
+
+		var iframe = document.createElement("iframe");
+		iframe = this.element.appendChild(iframe);
+		this.iframe = iframe;
+
+		//render on each change
+		//jotted.on('change', this.change.bind(this), 100)
+
+	}
+
 	loadMetal() {
 		var that = this;
 		Ajax.request(this.metal_link, 'GET').then(
@@ -12,88 +27,103 @@ class IFrame extends State {
 		});
 	}
 
-	appendIFrame(element) {
+	generateIFrameContent_() {
+		// find the iframe's document and write some content
+		var idocument = this.iframe.contentDocument || this.iframe.contentWindow.document;
+		idocument.open();
+		idocument.write("<!DOCTYPE html>\n");
+		idocument.write("<html>\n");
+		idocument.write("<head>\n");
+		idocument.write('<link rel="stylesheet" href="' + this.bootstrap_link + '">\n');
+		idocument.write('<script src="' + this.metal_link + '"></script>\n');
+		/*
+		idocument.write("<script>\n");
+		idocument.write("        (function () {\n");
+		idocument.write("          window.addEventListener('DOMContentLoaded', function () {\n");
+		idocument.write(" //debugger;\n");
+		idocument.write("            //window.parent.postMessage(JSON.stringify({\n");
+		idocument.write("              //type: 'metal-playground-dom-ready'\n");
+		idocument.write("            //}), '*')\n");
+		idocument.write("          })\n");
+		idocument.write("        }())\n");
+		idocument.write("</script>\n");
+*/
+		idocument.write("<style>\n");
+		idocument.write(this.css);
+		idocument.write("</style>\n");
+		idocument.write("</head>\n");
+		idocument.write("<body>\n");
+		idocument.write(this.html);
+		idocument.write("<script></script>\n");
+		idocument.write("<script>\n");
+		idocument.write("window.onload=function(){\n");
+		idocument.write(this.js);
+		idocument.write("}\n");
+		idocument.write("</script>\n");
+		idocument.write("</body>\n");
+		idocument.write("</html>");
+		idocument.close();
+	}
+
+	appendIFrame_() {
 		// create the iframe and attach it to the document
 		var iframe = document.createElement("iframe");
 		//iframe.setAttribute("scrolling", "no");
 		//iframe.setAttribute("frameborder", "0");
-		iframe = element.appendChild(iframe);
 
-		// find the iframe's document and write some content
-		var idocument = iframe.contentDocument || iframe.contentWindow.document;
-		idocument.open();
-		idocument.write("<!DOCTYPE html>");
-		idocument.write("<html>");
-		idocument.write("<head>");
-		idocument.write('<link rel="stylesheet" href="' + this.bootstrap_link + '">');
-		idocument.write('<script src="' + this.metal_link + '"></script>');
-		idocument.write("</head>");
-		idocument.write("<body>");
-		idocument.write("<script>");
-		idocument.write("console.log('scr1')");
-		/*
-		idocument.write("(function(d, s, id){");
-	  idocument.write("   var js, fjs = d.getElementsByTagName(s)[0];");
-	  idocument.write("   if (d.getElementById(id)) {return;}");
-	  idocument.write("   js = d.createElement(s); js.id = id;");
-	  idocument.write("   js.src = '" + this.metal_link + "';");
-	  idocument.write("   fjs.parentNode.insertBefore(js, fjs);");
-	  idocument.write(" }(document, 'script', 'metal-sdk'));");
-		*/
-		idocument.write("</script>");
-		idocument.write("</body>");
-		idocument.write("</html>");
-		idocument.close();
-
+		//it returns with the old child
+		this.iframe.parentNode.replaceChild(iframe, this.iframe);
 		this.iframe = iframe;
-		this.idocument = idocument;
+
+		this.generateIFrameContent_();
 	}
 
 	setContent(css, js, html) {
-		var doc = this.idocument;
-		var body = doc.querySelector('body');
-		var g = doc.createElement('script');
-
-		body.innerHTML = html;
-		body.appendChild(g);
-
-		var head = doc.querySelector('head');
-		var style = head.querySelector('style');
-		if (style) {
-			head.removeChild(style);
+		if ((this.css === css) && (this.js === js) && (this.html === html)) {
+			//same content as before
+			return;
 		}
-		style = doc.createElement('style');
-		style.innerHTML = css;
-		head.appendChild(style);
 
-		var ss = "(function(d, s, id){";
-	  ss+="   var js, fjs = d.getElementsByTagName(s)[0];";
-	  ss+="   if (d.getElementById(id)) {return;}";
-	  ss+="   js = d.createElement(s); js.id = id;";
-	  ss+="   js.src = '" + this.metal_link + "';";
-	  ss+="   fjs.parentNode.insertBefore(js, fjs);";
-	  ss+=" }(document, 'script', 'metal-sdk'));";
+		this.css = css;
+		this.js = js;
+		this.html = html;
 
-		g = doc.createElement('script');
-		var s = body.getElementsByTagName('script')[0];
-		g.text = js;
-		s.parentNode.insertBefore(g, s);
-
-		//this.iframe.contentWindow.eval(js);
+		this.appendIFrame_();
 	}
+
+	//from jotted's render.js
+	domready (e) {
+		// only catch messages from the iframe
+		if (e.source !== this.iframe.contentWindow) {
+			return
+		}
+
+		var data = {}
+		try {
+			data = JSON.parse(e.data)
+		} catch (e) {}
+
+		if (data.type === 'metal-playground-dom-ready') {
+			this.lastCallback()
+		}
+	}
+
 }
 
 IFrame.STATE = {
 	metal_link: {
-		value : 'https://metal.github.io/metal.js-standalone/bin/metal.bundle.js'
+		value : 'metal.bundle.js'
 		//value: 'https://code.jquery.com/jquery-3.1.1.min.js'
 	},
 	bootstrap_link: {
-		value : 'https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css'
+		value : 'bootstrap.min.css'
 	},
 	iframe : { value : {}},
-	idocument: { value: {}},
-	metalSource: { value: ''}
+	metalSource: { value: ''},
+	css : {value : ''},
+	js : {value: ''},
+	html: {value: ''},
+	element: {value: {}}
 };
 
 export default IFrame;

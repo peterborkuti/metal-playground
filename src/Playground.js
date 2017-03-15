@@ -68,15 +68,11 @@ class Playground extends Component {
 				that.editor[e] = editor;
 		});
 
-		this.iframe = new IFrame();
-
-		//this.iframe.loadMetal();
-
-		var iFrameCreatorRunner = this.iframe.appendIFrame.bind(
-			this.iframe,
-			this.element.querySelector('.metal-playground-result-content'));
-
-		setTimeout(iFrameCreatorRunner, 0);
+		this.iframe = new IFrame({
+			element: this.element.querySelector('.metal-playground-result-content'),
+		  html: '',
+		  js: '',
+		  css: ''});
 	}
 }
 
