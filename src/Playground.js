@@ -30,7 +30,9 @@ class Playground extends Component {
 		var js = this.editor.js.getValue();
 		var html = this.editor.html.getValue();
 
-		this.iframe.setContent(css, js, html);
+		//this.iframe.css = css;
+		//this.iframe.js = "window.onload=function(){" + js + "}";
+		//this.iframe.html = html;
 	}
 
 	sampleSelected() {
@@ -50,6 +52,12 @@ class Playground extends Component {
 	rendered() {
 		var that = this;
 
+		this.iframe = new IFrame({
+			element: this.element.querySelector('.metal-playground-result-content-iframe'),
+		  html: 'Hello',
+		  js: '',
+		  css: ''});
+
 		var sampleList = new SampleList({
 										sampleRootUrl: this.sampleRootUrl,
 										element: this.element.querySelector('.metal-playground-select')
@@ -67,12 +75,6 @@ class Playground extends Component {
     		editor.getSession().setMode(that.getAceMode(e));
 				that.editor[e] = editor;
 		});
-
-		this.iframe = new IFrame({
-			element: this.element.querySelector('.metal-playground-result-content'),
-		  html: '',
-		  js: '',
-		  css: ''});
 	}
 }
 
