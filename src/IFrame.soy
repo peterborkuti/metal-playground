@@ -1,0 +1,42 @@
+{namespace IFrame}
+
+/**
+ * This renders the main element.
+ */
+
+{template .render}
+{@param doctype_html: string}
+{@param bootstrap_link: string}
+{@param metal_link: string}
+{@param babel_link: string}
+{@param css: string}
+{@param html: string}
+{@param js: string}
+
+<iframe>
+	/** possible MetalJS bug: <!DOCTYPE html> There's no constructor registered for the component named !DOCTYPE. **/
+	{$doctype_html}
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8">
+			<title>Playground result</title>
+    			<link rel="stylesheet" href="{$bootstrap_link}">
+    			<script src="{$babel_link}"></script>
+    			<script src="{$metal_link}"></script>
+
+    			<style>
+			    {$css}
+			</style>
+		</head>
+		<body>
+		    {$html}
+		    <script></script>
+		    <script>
+			window.onload=function(){
+			    {$js}
+			}
+		    </script>
+		</body>
+	</html>
+</iframe>
+{/template}

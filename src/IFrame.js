@@ -1,8 +1,10 @@
 'use strict';
 
-import State from 'metal-state';
+import Component from 'metal-component';
+import Soy from 'metal-soy';
+import templates from './IFrame.soy.js';
 
-class IFrame extends State {
+class IFrame extends Component {
 
 	constructor(opt_config, opt_obj, opt_context) {
 		super(opt_config, opt_obj, opt_context);
