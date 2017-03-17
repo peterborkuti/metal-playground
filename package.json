@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Metal's playground",
   "license": "BSD",
-  "repository": "metal/metal-treeview",
+  "repository": "metal/metal-playground",
   "engines": {
     "node": ">=0.12.0",
     "npm": ">=3.0.0"
@@ -25,22 +25,21 @@
     "playground"
   ],
   "dependencies": {
-    "bootstrap": "^3.3.6",
-    "codemirror":"~5.24.2",
+    "bootstrap": "^3.3.7",
     "ace-editor-builds": "^1.2.4",
-    "metal": "^2.0.0",
-    "metal-component": "^2.0.0",
-    "metal-dom": "^2.0.0",
-    "metal-events": "^2.0.0",
-    "metal-soy": "^2.0.0",
+    "metal": "^2.6.4",
+    "metal-component": "^2.7.0",
+    "metal-dom": "^2.6.4",
+    "metal-events": "^2.6.4",
+    "metal-soy": "^2.7.0",
     "metal-toggler": "^1.0.0-rc.11",
-    "metal-ajax": "^1.0.0-rc.11",
-    "metal-select": "^1.0.0-rc.11"
+    "metal-ajax": "^2.0.3",
+    "metal-select": "^2.0.4"
   },
   "devDependencies": {
-    "babel-cli": "^6.4.5",
-    "babel-preset-metal": "^4.0.0",
-    "gulp": "^3.8.11",
-    "gulp-metal": "^1.0.0"
+    "babel-cli": "^6.24.0",
+    "babel-preset-metal": "^4.1.0",
+    "gulp": "^3.9.1",
+    "gulp-metal": "^1.11.2"
   }
 }
