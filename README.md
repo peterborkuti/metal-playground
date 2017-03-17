@@ -1,20 +1,8 @@
 # metal-playground
 
-[Test it here](demos/webtest.html)
-Unfortunately, I could not finish it, the RESULT Pane cold not load metaljs, so the
-scripts can not be run.
-
-Probably there is a trick here, but I tried at least 10 different things.
-
-Now I know what the trick is: iframe should be re-created in every change as jotted
-do this:
-https://github.com/ghinda/jotted/blob/master/src/plugins/render.js
-However I wanted to avoid this to not load js frameworks every time.
+[Test it here](https://peterborkuti.github.io/metal-playground/demos/webtest.html)
 
 The samples are loaded from a metal-playground-samples repository.
-There is no save function and the result pane is refreshing only when loading a sample.
-These can be solved easily, but it is meaningless without running metal js in the iframe,
-so I did not bother with it.
 
 Metal's playground
 
@@ -40,4 +28,4 @@ Metal's playground
   gulp build
   ```
 
-5. Open the demo at demos/index.html on your browser.
+5. Open the demo at demos/index.html on your browser or demos/webtest.html

@@ -20036,6 +20036,10 @@ babelHelpers;
 					var editor = window.ace.edit(tArea);
 					editor.setTheme("ace/theme/monokai");
 					editor.getSession().setMode(that.getAceMode(e));
+
+					var renderSampleRunner = that.renderSample.bind(that);
+					editor.getSession().on('change', renderSampleRunner);
+
 					that.editor[e] = editor;
 				});
 

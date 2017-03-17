@@ -67,7 +67,11 @@ class Playground extends Component {
 				that.element.querySelector('.metal-playground-' + e + '-content');
 			var editor = window.ace.edit(tArea);
 			editor.setTheme("ace/theme/monokai");
-    			editor.getSession().setMode(that.getAceMode(e));
+			editor.getSession().setMode(that.getAceMode(e));
+
+			var renderSampleRunner = that.renderSample.bind(that);
+			editor.getSession().on('change', renderSampleRunner);
+
 			that.editor[e] = editor;
 		});
 
