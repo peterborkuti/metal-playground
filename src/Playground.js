@@ -6,8 +6,11 @@ import Component from 'metal-component';
 import Soy from 'metal-soy';
 import dom from 'metal-dom';
 import Ajax from 'metal-ajax';
-//import Toggler from 'metal-toggler';
-import State from 'metal-state';
+
+import Toggler from 'metal-toggler';
+import Select from 'metal-select';
+import Tooltip from 'metal-tooltip';
+import Tabs from 'metal-tabs';
 
 import SampleList from './SampleList';
 import IFrame from './IFrame';
@@ -51,9 +54,9 @@ class Playground extends Component {
 		var that = this;
 
 		var sampleList = new SampleList({
-										sampleRootUrl: this.sampleRootUrl,
-										element: this.element.querySelector('.metal-playground-select')
-									});
+			sampleRootUrl: this.sampleRootUrl,
+			element: this.element.querySelector('.metal-playground-select')
+		});
 		var sampleSelectedHandler = this.sampleSelected.bind(this);
 
 		this.sampleList = sampleList;
@@ -62,19 +65,17 @@ class Playground extends Component {
 		['css', 'html', 'js'].forEach(function(e) {
 			var tArea =
 				that.element.querySelector('.metal-playground-' + e + '-content');
-				var editor = window.ace.edit(tArea);
-				editor.setTheme("ace/theme/monokai");
-    		editor.getSession().setMode(that.getAceMode(e));
-				that.editor[e] = editor;
+			var editor = window.ace.edit(tArea);
+			editor.setTheme("ace/theme/monokai");
+    			editor.getSession().setMode(that.getAceMode(e));
+			that.editor[e] = editor;
 		});
 
-		this.iframe = new IFrame();
+		this.iframe = new IFrame({
+			parentElement:this.element.querySelector('.metal-playground-result-content') 
+		});
 
-		//this.iframe.loadMetal();
-
-		var iFrameCreatorRunner = this.iframe.appendIFrame.bind(
-			this.iframe,
-			this.element.querySelector('.metal-playground-result-content'));
+		var iFrameCreatorRunner = this.iframe.createIFrame.bind(this.iframe);
 
 		setTimeout(iFrameCreatorRunner, 0);
 	}

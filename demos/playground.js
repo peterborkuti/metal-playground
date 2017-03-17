@@ -3279,35 +3279,32 @@ babelHelpers;
 				});
 			}
 		}, {
-			key: 'appendIFrame',
-			value: function appendIFrame(element) {
+			key: 'createIFrame',
+			value: function createIFrame() {
 				// create the iframe and attach it to the document
 				var iframe = document.createElement("iframe");
-				//iframe.setAttribute("scrolling", "no");
-				//iframe.setAttribute("frameborder", "0");
-				iframe = element.appendChild(iframe);
+				try {
+					this.parentElement.removeChild(this.iframe);
+				} catch (err) {};
+				iframe = this.parentElement.appendChild(iframe);
 
 				// find the iframe's document and write some content
 				var idocument = iframe.contentDocument || iframe.contentWindow.document;
+
 				idocument.open();
 				idocument.write("<!DOCTYPE html>");
 				idocument.write("<html>");
 				idocument.write("<head>");
 				idocument.write('<link rel="stylesheet" href="' + this.bootstrap_link + '">');
 				idocument.write('<script src="' + this.metal_link + '"></script>');
+				idocument.write("<style>");
+				idocument.write(this.css);
+				idocument.write("</style>");
 				idocument.write("</head>");
 				idocument.write("<body>");
+				idocument.write(this.html);
 				idocument.write("<script>");
-				idocument.write("console.log('scr1')");
-				/*
-    idocument.write("(function(d, s, id){");
-     idocument.write("   var js, fjs = d.getElementsByTagName(s)[0];");
-     idocument.write("   if (d.getElementById(id)) {return;}");
-     idocument.write("   js = d.createElement(s); js.id = id;");
-     idocument.write("   js.src = '" + this.metal_link + "';");
-     idocument.write("   fjs.parentNode.insertBefore(js, fjs);");
-     idocument.write(" }(document, 'script', 'metal-sdk'));");
-    */
+				idocument.write(this.js);
 				idocument.write("</script>");
 				idocument.write("</body>");
 				idocument.write("</html>");
@@ -3319,36 +3316,12 @@ babelHelpers;
 		}, {
 			key: 'setContent',
 			value: function setContent(css, js, html) {
-				var doc = this.idocument;
-				var body = doc.querySelector('body');
-				var g = doc.createElement('script');
-
-				body.innerHTML = html;
-				body.appendChild(g);
-
-				var head = doc.querySelector('head');
-				var style = head.querySelector('style');
-				if (style) {
-					head.removeChild(style);
+				if (css !== this.css || js !== this.js || html != this.html) {
+					this.css = css;
+					this.js = js;
+					this.html = html;
+					this.createIFrame();
 				}
-				style = doc.createElement('style');
-				style.innerHTML = css;
-				head.appendChild(style);
-
-				var ss = "(function(d, s, id){";
-				ss += "   var js, fjs = d.getElementsByTagName(s)[0];";
-				ss += "   if (d.getElementById(id)) {return;}";
-				ss += "   js = d.createElement(s); js.id = id;";
-				ss += "   js.src = '" + this.metal_link + "';";
-				ss += "   fjs.parentNode.insertBefore(js, fjs);";
-				ss += " }(document, 'script', 'metal-sdk'));";
-
-				g = doc.createElement('script');
-				var s = body.getElementsByTagName('script')[0];
-				g.text = js;
-				s.parentNode.insertBefore(g, s);
-
-				//this.iframe.contentWindow.eval(js);
 			}
 		}]);
 		return IFrame;
@@ -3356,15 +3329,17 @@ babelHelpers;
 
 	IFrame.STATE = {
 		metal_link: {
-			value: 'https://metal.github.io/metal.js-standalone/bin/metal.bundle.js'
+			//value : 'https://metal.github.io/metal.js-standalone/bin/metal.bundle.js'
 			//value: 'https://code.jquery.com/jquery-3.1.1.min.js'
+			value: 'playground.js'
 		},
 		bootstrap_link: {
-			value: 'https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css'
+			value: 'bootstrap.min.css'
 		},
 		iframe: { value: {} },
 		idocument: { value: {} },
-		metalSource: { value: '' }
+		metalSource: { value: '' },
+		parentElement: { value: {} }
 	};
 
 	this['metal']['IFrame'] = IFrame;
@@ -14620,7 +14595,7 @@ babelHelpers;
 'use strict';
 
 (function () {
-	var core = this['metalNamed']['metal']['core'];
+	var isFunction = this['metalNamed']['metal']['isFunction'];
 	var parseFromAnchor = this['metal']['parseFromAnchor'];
 
 	/**
@@ -14630,7 +14605,7 @@ babelHelpers;
   */
 
 	function parse(opt_uri) {
-		if (core.isFunction(URL) && URL.length) {
+		if (isFunction(URL) && URL.length) {
 			return new URL(opt_uri);
 		} else {
 			return parseFromAnchor(opt_uri);
@@ -14723,14 +14698,21 @@ babelHelpers;
 			}
 
 			/**
+    * Creates a `MultiMap` instance from the given object.
+    * @param {!Object} obj
+    * @return {!MultiMap}
+    */
+
+		}, {
+			key: 'get',
+
+
+			/**
     * Gets the first added value from a key name.
     * @param {string} name
     * @return {*}
     * @chainable
     */
-
-		}, {
-			key: 'get',
 			value: function get(name) {
 				var values = this.values[name.toLowerCase()];
 				if (values) {
@@ -14827,6 +14809,16 @@ babelHelpers;
 			value: function toString() {
 				return JSON.stringify(this.values);
 			}
+		}], [{
+			key: 'fromObject',
+			value: function fromObject(obj) {
+				var map = new MultiMap();
+				var keys = Object.keys(obj);
+				for (var i = 0; i < keys.length; i++) {
+					map.set(keys[i], obj[keys[i]]);
+				}
+				return map;
+			}
 		}]);
 		return MultiMap;
 	}(Disposable);
@@ -14836,10 +14828,284 @@ babelHelpers;
 'use strict';
 
 (function () {
-	var core = this['metalNamed']['metal']['core'];
+	var array = this['metalNamed']['metal']['array'];
+
+	/**
+  * Generic tree node data structure with arbitrary number of child nodes.
+  * @param {V} value Value.
+  * @constructor
+  */
+
+	var TreeNode = function () {
+		function TreeNode(value) {
+			babelHelpers.classCallCheck(this, TreeNode);
+
+			/**
+    * The value.
+    * @private {V}
+    */
+			this.value_ = value;
+
+			/**
+    * Reference to the parent node or null if it has no parent.
+    * @private {TreeNode}
+    */
+			this.parent_ = null;
+
+			/**
+    * Child nodes or null in case of leaf node.
+    * @private {Array<!TreeNode>}
+    */
+			this.children_ = null;
+		}
+
+		/**
+   * Appends a child node to this node.
+   * @param {!TreeNode} child Orphan child node.
+   */
+
+
+		babelHelpers.createClass(TreeNode, [{
+			key: 'addChild',
+			value: function addChild(child) {
+				assertChildHasNoParent(child);
+				child.setParent(this);
+				this.children_ = this.children_ || [];
+				this.children_.push(child);
+			}
+
+			/**
+    * Tells whether this node is the ancestor of the given node.
+    * @param {!TreeNode} node A node.
+    * @return {boolean} Whether this node is the ancestor of {@code node}.
+    */
+
+		}, {
+			key: 'contains',
+			value: function contains(node) {
+				var current = node.getParent();
+				while (current) {
+					if (current === this) {
+						return true;
+					}
+					current = current.getParent();
+				}
+				return false;
+			}
+
+			/**
+    * @return {!Array<TreeNode>} All ancestor nodes in bottom-up order.
+    */
+
+		}, {
+			key: 'getAncestors',
+			value: function getAncestors() {
+				var ancestors = [];
+				var node = this.getParent();
+				while (node) {
+					ancestors.push(node);
+					node = node.getParent();
+				}
+				return ancestors;
+			}
+
+			/**
+    * Gets the child node of this node at the given index.
+    * @param {number} index Child index.
+    * @return {?TreeNode} The node at the given index
+    * or null if not found.
+    */
+
+		}, {
+			key: 'getChildAt',
+			value: function getChildAt(index) {
+				return this.getChildren()[index] || null;
+			}
+
+			/**
+    * @return {?Array<!TreeNode>} Child nodes or null in case of leaf node.
+    */
+
+		}, {
+			key: 'getChildren',
+			value: function getChildren() {
+				return this.children_ || TreeNode.EMPTY_ARRAY;
+			}
+
+			/**
+    * @return {number} The number of children.
+    */
+
+		}, {
+			key: 'getChildCount',
+			value: function getChildCount() {
+				return this.getChildren().length;
+			}
+
+			/**
+    * @return {number} The number of ancestors of the node.
+    */
+
+		}, {
+			key: 'getDepth',
+			value: function getDepth() {
+				var depth = 0;
+				var node = this;
+				while (node.getParent()) {
+					depth++;
+					node = node.getParent();
+				}
+				return depth;
+			}
+
+			/**
+    * @return {?TreeNode} Parent node or null if it has no parent.
+    */
+
+		}, {
+			key: 'getParent',
+			value: function getParent() {
+				return this.parent_;
+			}
+
+			/**
+    * @return {!TreeNode} The root of the tree structure, i.e. the farthest
+    * ancestor of the node or the node itself if it has no parents.
+    */
+
+		}, {
+			key: 'getRoot',
+			value: function getRoot() {
+				var root = this;
+				while (root.getParent()) {
+					root = root.getParent();
+				}
+				return root;
+			}
+
+			/**
+    * Gets the value.
+    * @return {V} The value.
+    */
+
+		}, {
+			key: 'getValue',
+			value: function getValue() {
+				return this.value_;
+			}
+
+			/**
+    * @return {boolean} Whether the node is a leaf node.
+    */
+
+		}, {
+			key: 'isLeaf',
+			value: function isLeaf() {
+				return !this.getChildCount();
+			}
+
+			/**
+    * Removes the given child node of this node.
+    * @param {TreeNode} child The node to remove.
+    * @return {TreeNode} The removed node if any, null otherwise.
+    */
+
+		}, {
+			key: 'removeChild',
+			value: function removeChild(child) {
+				if (array.remove(this.getChildren(), child)) {
+					return child;
+				}
+				return null;
+			}
+
+			/**
+    * Sets the parent node of this node. The callers must ensure that the
+    * parent node and only that has this node among its children.
+    * @param {TreeNode} parent The parent to set. If null, the node will be
+    * detached from the tree.
+    * @protected
+    */
+
+		}, {
+			key: 'setParent',
+			value: function setParent(parent) {
+				this.parent_ = parent;
+			}
+
+			/**
+    * Traverses the subtree. The first callback starts with this node,
+    * and visits the descendant nodes depth-first, in preorder.
+    * The second callback, starts with deepest child then visits
+    * the ancestor nodes depth-first, in postorder. E.g.
+    *
+    *  	 A
+    *    / \
+    *   B   C
+    *  /   / \
+    * D   E   F
+    *
+    * preorder -> ['A', 'B', 'D', 'C', 'E', 'F']
+    * postorder -> ['D', 'B', 'E', 'F', 'C', 'A']
+    *
+    * @param {function=} opt_preorderFn The callback to execute when visiting a node.
+    * @param {function=} opt_postorderFn The callback to execute before leaving a node.
+    */
+
+		}, {
+			key: 'traverse',
+			value: function traverse(opt_preorderFn, opt_postorderFn) {
+				if (opt_preorderFn) {
+					opt_preorderFn(this);
+				}
+				this.getChildren().forEach(function (child) {
+					return child.traverse(opt_preorderFn, opt_postorderFn);
+				});
+				if (opt_postorderFn) {
+					opt_postorderFn(this);
+				}
+			}
+		}]);
+		return TreeNode;
+	}();
+
+	/**
+  * Constant for empty array to avoid unnecessary allocations.
+  * @private
+  */
+
+
+	TreeNode.EMPTY_ARRAY = [];
+
+	/**
+  * Asserts that child has no parent.
+  * @param {TreeNode} child A child.
+  * @private
+  */
+	var assertChildHasNoParent = function assertChildHasNoParent(child) {
+		if (child.getParent()) {
+			throw new Error('Cannot add child with parent.');
+		}
+	};
+
+	this['metal']['TreeNode'] = TreeNode;
+}).call(this);
+'use strict';
+
+(function () {
+  var MultiMap = this['metal']['MultiMap'];
+  var TreeNode = this['metal']['TreeNode'];
+  this['metalNamed']['structs'] = this['metalNamed']['structs'] || {};
+  this['metalNamed']['structs']['MultiMap'] = MultiMap;
+  this['metalNamed']['structs']['TreeNode'] = TreeNode;
+}).call(this);
+'use strict';
+
+(function () {
+	var isDef = this['metalNamed']['metal']['isDef'];
 	var string = this['metalNamed']['metal']['string'];
 	var parse = this['metal']['parse'];
-	var MultiMap = this['metal']['MultiMap'];
+	var MultiMap = this['metalNamed']['structs']['MultiMap'];
 
 
 	var parseFn_ = parse;
@@ -14901,7 +15167,7 @@ babelHelpers;
 			key: 'addParameterValue',
 			value: function addParameterValue(name, value) {
 				this.ensureQueryInitialized_();
-				if (core.isDef(value)) {
+				if (isDef(value)) {
 					value = String(value);
 				}
 				this.query.add(name, value);
@@ -14949,7 +15215,7 @@ babelHelpers;
 						    key = _param$split2[0],
 						    value = _param$split2[1];
 
-						if (core.isDef(value)) {
+						if (isDef(value)) {
 							value = Uri.urlDecode(value);
 						}
 						_this3.addParameterValue(key, value);
@@ -15115,7 +15381,7 @@ babelHelpers;
 				this.getParameterNames().forEach(function (name) {
 					_this4.getParameterValues(name).forEach(function (value) {
 						querystring += name;
-						if (core.isDef(value)) {
+						if (isDef(value)) {
 							querystring += '=' + encodeURIComponent(value);
 						}
 						querystring += '&';
@@ -15455,14 +15721,16 @@ babelHelpers;
  *      Copyright 2013 The Closure Library Authors. All Rights Reserved.
  *
  * NOTE(eduardo): Promise support is not ready on all supported browsers,
- * therefore core.js is temporarily using Google's promises as polyfill. It
- * supports cancellable promises and has clean and fast implementation.
+ * therefore metal-promise is temporarily using Google's promises as polyfill.
+ * It supports cancellable promises and has clean and fast implementation.
  */
 
 'use strict';
 
 (function () {
-  var core = this['metalNamed']['metal']['core'];
+  var isDef = this['metalNamed']['metal']['isDef'];
+  var isFunction = this['metalNamed']['metal']['isFunction'];
+  var isObject = this['metalNamed']['metal']['isObject'];
   var async = this['metalNamed']['metal']['async'];
 
   /**
@@ -15860,7 +16128,7 @@ babelHelpers;
    * @override
    */
   CancellablePromise.prototype.then = function (opt_onFulfilled, opt_onRejected, opt_context) {
-    return this.addChildPromise_(core.isFunction(opt_onFulfilled) ? opt_onFulfilled : null, core.isFunction(opt_onRejected) ? opt_onRejected : null, opt_context);
+    return this.addChildPromise_(isFunction(opt_onFulfilled) ? opt_onFulfilled : null, isFunction(opt_onRejected) ? opt_onRejected : null, opt_context);
   };
   Thenable.addImplementation(CancellablePromise);
 
@@ -16069,7 +16337,7 @@ babelHelpers;
       callbackEntry.onRejected = onRejected ? function (reason) {
         try {
           var result = onRejected.call(opt_context, reason);
-          if (!core.isDef(result) && reason.IS_CANCELLATION_ERROR) {
+          if (!isDef(result) && reason.IS_CANCELLATION_ERROR) {
             // Propagate cancellation to children if no other result is returned.
             reject(reason);
           } else {
@@ -16145,10 +16413,10 @@ babelHelpers;
       this.state_ = CancellablePromise.State_.BLOCKED;
       x.then(this.unblockAndFulfill_, this.unblockAndReject_, this);
       return;
-    } else if (core.isObject(x)) {
+    } else if (isObject(x)) {
       try {
         var then = x.then;
-        if (core.isFunction(then)) {
+        if (isFunction(then)) {
           this.tryThen_(x, then);
           return;
         }
@@ -16373,7 +16641,8 @@ babelHelpers;
 'use strict';
 
 (function () {
-	var core = this['metalNamed']['metal']['core'];
+	var isDef = this['metalNamed']['metal']['isDef'];
+	var isDefAndNotNull = this['metalNamed']['metal']['isDefAndNotNull'];
 	var Uri = this['metal']['Uri'];
 	var Promise = this['metalNamed']['Promise']['CancellablePromise'];
 
@@ -16432,6 +16701,9 @@ babelHelpers;
 		}, {
 			key: 'request',
 			value: function request(url, method, body, opt_headers, opt_params, opt_timeout, opt_sync, opt_withCredentials) {
+				url = url || '';
+				method = method || 'GET';
+
 				var request = new XMLHttpRequest();
 
 				var promise = new Promise(function (resolve, reject) {
@@ -16470,9 +16742,9 @@ babelHelpers;
 					});
 				}
 
-				request.send(core.isDef(body) ? body : null);
+				request.send(isDef(body) ? body : null);
 
-				if (core.isDefAndNotNull(opt_timeout)) {
+				if (isDefAndNotNull(opt_timeout)) {
 					var timeout = setTimeout(function () {
 						promise.cancel('Request timeout');
 					}, opt_timeout);
@@ -16485,6 +16757,203 @@ babelHelpers;
 	}();
 
 	this['metal']['Ajax'] = Ajax;
+}).call(this);
+'use strict';
+
+(function () {
+	var core = this['metal']['metal'];
+	var dom = this['metal']['dom'];
+	var EventHandler = this['metalNamed']['events']['EventHandler'];
+	var State = this['metal']['state'];
+
+	/**
+  * Toggler component.
+  */
+
+	var Toggler = function (_State) {
+		babelHelpers.inherits(Toggler, _State);
+
+		/**
+   * @inheritDoc
+   */
+		function Toggler(opt_config) {
+			babelHelpers.classCallCheck(this, Toggler);
+
+			var _this = babelHelpers.possibleConstructorReturn(this, (Toggler.__proto__ || Object.getPrototypeOf(Toggler)).call(this, opt_config));
+
+			_this.headerEventHandler_ = new EventHandler();
+
+			_this.on('headerChanged', _this.syncHeader);
+			_this.syncHeader();
+			return _this;
+		}
+
+		/**
+   * @inheritDoc
+   */
+
+
+		babelHelpers.createClass(Toggler, [{
+			key: 'disposeInternal',
+			value: function disposeInternal() {
+				babelHelpers.get(Toggler.prototype.__proto__ || Object.getPrototypeOf(Toggler.prototype), 'disposeInternal', this).call(this);
+				this.headerEventHandler_.removeAllListeners();
+			}
+
+			/**
+    * Gets the content to be toggled by the given header element.
+    * @param {!Element} header
+    * @protected
+    */
+
+		}, {
+			key: 'getContentElement_',
+			value: function getContentElement_(header) {
+				if (core.isElement(this.content)) {
+					return this.content;
+				}
+
+				var content = dom.next(header, this.content);
+				if (content) {
+					return content;
+				}
+
+				content = header.querySelector(this.content);
+				if (content) {
+					return content;
+				}
+
+				return this.container.querySelector(this.content);
+			}
+
+			/**
+    * Handles a `click` event on the header.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleClick_',
+			value: function handleClick_(event) {
+				this.toggle(event.delegateTarget || event.currentTarget);
+			}
+
+			/**
+    * Handles a `keydown` event on the header.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleKeydown_',
+			value: function handleKeydown_(event) {
+				if (event.keyCode === 13 || event.keyCode === 32) {
+					this.toggle(event.delegateTarget || event.currentTarget);
+					event.preventDefault();
+				}
+			}
+
+			/**
+    * Syncs the component according to the value of the `header` state,
+    * attaching events to the new element and detaching from any previous one.
+    */
+
+		}, {
+			key: 'syncHeader',
+			value: function syncHeader() {
+				this.headerEventHandler_.removeAllListeners();
+				if (this.header) {
+					if (core.isString(this.header)) {
+						this.headerEventHandler_.add(dom.delegate(this.container, 'click', this.header, this.handleClick_.bind(this)), dom.delegate(this.container, 'keydown', this.header, this.handleKeydown_.bind(this)));
+					} else {
+						this.headerEventHandler_.add(dom.on(this.header, 'click', this.handleClick_.bind(this)), dom.on(this.header, 'keydown', this.handleKeydown_.bind(this)));
+					}
+				}
+			}
+
+			/**
+    * Toggles the content's visibility.
+    */
+
+		}, {
+			key: 'toggle',
+			value: function toggle(header) {
+				var content = this.getContentElement_(header);
+				dom.toggleClasses(content, Toggler.CSS_EXPANDED);
+				dom.toggleClasses(content, Toggler.CSS_COLLAPSED);
+
+				if (dom.hasClass(content, Toggler.CSS_EXPANDED)) {
+					dom.addClasses(header, Toggler.CSS_HEADER_EXPANDED);
+					dom.removeClasses(header, Toggler.CSS_HEADER_COLLAPSED);
+				} else {
+					dom.removeClasses(header, Toggler.CSS_HEADER_EXPANDED);
+					dom.addClasses(header, Toggler.CSS_HEADER_COLLAPSED);
+				}
+			}
+		}]);
+		return Toggler;
+	}(State);
+
+	/**
+  * State configuration.
+  */
+
+
+	Toggler.STATE = {
+		/**
+   * The element where the header/content selectors will be looked for.
+   * @type {string|!Element}
+   */
+		container: {
+			setter: dom.toElement,
+			validator: function validator(value) {
+				return core.isString(value) || core.isElement(value);
+			},
+			value: document
+		},
+
+		/**
+   * The element that should be expanded/collapsed by this toggler.
+   * @type {string|!Element}
+   */
+		content: {
+			validator: function validator(value) {
+				return core.isString(value) || core.isElement(value);
+			}
+		},
+
+		/**
+   * The element that should be trigger toggling.
+   * @type {string|!Element}
+   */
+		header: {
+			validator: function validator(value) {
+				return core.isString(value) || core.isElement(value);
+			}
+		}
+	};
+
+	/**
+  * The CSS class added to the content when it's collapsed.
+  */
+	Toggler.CSS_COLLAPSED = 'toggler-collapsed';
+
+	/**
+  * The CSS class added to the content when it's expanded.
+  */
+	Toggler.CSS_EXPANDED = 'toggler-expanded';
+
+	/**
+  * The CSS class added to the header when the content is collapsed.
+  */
+	Toggler.CSS_HEADER_COLLAPSED = 'toggler-header-collapsed';
+
+	/**
+  * The CSS class added to the header when the content is expanded.
+  */
+	Toggler.CSS_HEADER_EXPANDED = 'toggler-header-expanded';
+
+	this['metal']['Toggler'] = Toggler;
 }).call(this);
 'use strict';
 
@@ -16950,12 +17419,23 @@ babelHelpers;
     * @param {Align.Top|Align.Right|Align.Bottom|Align.Left} pos
     *     The initial position to try. Options `Align.Top`, `Align.Right`,
     *     `Align.Bottom`, `Align.Left`.
+    * @param {boolean} autoBestAlign Option to suggest or not the best region
+    *      to align.
     * @return {string} The final chosen position for the aligned element.
     * @static
     */
 			value: function align(element, alignElement, position) {
-				var suggestion = this.suggestAlignBestRegion(element, alignElement, position);
-				var bestRegion = suggestion.region;
+				var autoBestAlign = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : true;
+
+				var bestRegion;
+
+				if (autoBestAlign) {
+					var suggestion = this.suggestAlignBestRegion(element, alignElement, position);
+					position = suggestion.position;
+					bestRegion = suggestion.region;
+				} else {
+					bestRegion = this.getAlignRegion(element, alignElement, position);
+				}
 
 				var computedStyle = window.getComputedStyle(element, null);
 				if (computedStyle.getPropertyValue('position') !== 'fixed') {
@@ -16971,7 +17451,7 @@ babelHelpers;
 
 				element.style.top = bestRegion.top + 'px';
 				element.style.left = bestRegion.left + 'px';
-				return suggestion.position;
+				return position;
 			}
 
 			/**
@@ -17619,6 +18099,8 @@ babelHelpers;
     goog.require('soy.asserts');
     /** @suppress {extraRequire} */
     goog.require('goog.i18n.bidi');
+    /** @suppress {extraRequire} */
+    goog.require('goog.string');
     var IncrementalDom = goog.require('incrementaldom');
     var ie_open = IncrementalDom.elementOpen;
     var ie_close = IncrementalDom.elementClose;
@@ -17633,10 +18115,13 @@ babelHelpers;
     /**
      * @param {{
      *    arrowClass: (?),
+     *    disabled: (?),
      *    buttonClass: (?),
      *    elementClasses: (?),
+     *    expanded_: (?),
      *    handleDropdownStateSynced_: (?),
      *    handleItemClick_: (?),
+     *    handleItemKeyDown_: (?),
      *    hiddenInputName: (?),
      *    items: (?),
      *    values: (?),
@@ -17650,38 +18135,39 @@ babelHelpers;
      */
     function $render(opt_data, opt_ignored, opt_ijData) {
       var $$temp;
-      soy.asserts.assertType(opt_data.label == null || opt_data.label instanceof Function || opt_data.label instanceof soydata.UnsanitizedText || goog.isString(opt_data.label), 'label', opt_data.label, '?soydata.SanitizedHtml|string|undefined');
+      soy.asserts.assertType(opt_data.label == null || opt_data.label instanceof Function || opt_data.label instanceof goog.soy.data.SanitizedContent || opt_data.label instanceof soydata.UnsanitizedText || goog.isString(opt_data.label), 'label', opt_data.label, '?soydata.SanitizedHtml|string|undefined');
       var label = /** @type {?soydata.SanitizedHtml|string|undefined} */opt_data.label;
       ie_open('div', null, null, 'class', 'select' + (opt_data.elementClasses ? ' ' + opt_data.elementClasses : ''), 'data-onkeydown', 'handleKeyDown_');
       var currSelectedIndex__soy6 = opt_data.selectedIndex != null ? opt_data.selectedIndex : label || opt_data.items.length == 0 ? -1 : 0;
-      ie_open('input', null, null, 'type', 'hidden', 'name', opt_data.hiddenInputName ? opt_data.hiddenInputName : '', 'value', currSelectedIndex__soy6 == -1 ? '' : opt_data.values ? opt_data.values[currSelectedIndex__soy6] : '');
+      ie_open('input', null, null, 'disabled', opt_data.disabled, 'type', 'hidden', 'name', opt_data.hiddenInputName ? opt_data.hiddenInputName : '', 'value', currSelectedIndex__soy6 == -1 ? '' : opt_data.values ? opt_data.values[currSelectedIndex__soy6] : '');
       ie_close('input');
-      var param12 = function param12() {
-        var itemList21 = opt_data.items;
-        var itemListLen21 = itemList21.length;
-        for (var itemIndex21 = 0; itemIndex21 < itemListLen21; itemIndex21++) {
-          var itemData21 = itemList21[itemIndex21];
-          ie_open('li', null, null, 'data-onclick', ($$temp = opt_data.handleItemClick_) == null ? '' : $$temp, 'class', 'select-option' + (currSelectedIndex__soy6 == itemIndex21 ? ' selected' : ''));
+      var param14 = function param14() {
+        var itemList24 = opt_data.items;
+        var itemListLen24 = itemList24.length;
+        for (var itemIndex24 = 0; itemIndex24 < itemListLen24; itemIndex24++) {
+          var itemData24 = itemList24[itemIndex24];
+          ie_open('li', null, null, 'data-onclick', ($$temp = opt_data.handleItemClick_) == null ? '' : $$temp, 'data-onkeydown', ($$temp = opt_data.handleItemKeyDown_) == null ? '' : $$temp, 'class', 'select-option' + (currSelectedIndex__soy6 == itemIndex24 ? ' selected' : ''));
           ie_open('a', null, null, 'href', 'javascript:;');
-          $renderAsHtml_({ value: itemData21 }, null, opt_ijData);
+          var dyn0 = itemData24;
+          if (typeof dyn0 == 'function') dyn0();else if (dyn0 != null) itext(dyn0);
           ie_close('a');
           ie_close('li');
         }
       };
-      var param24 = function param24() {
-        ie_open('button', null, null, 'class', (opt_data.buttonClass ? opt_data.buttonClass : '') + ' dropdown-select', 'type', 'button', 'data-onclick', 'toggle');
+      var param28 = function param28() {
+        ie_open('button', null, null, 'class', (opt_data.buttonClass ? opt_data.buttonClass : '') + ' dropdown-select', 'disabled', opt_data.disabled, 'type', 'button', 'data-onclick', 'toggle', 'aria-haspopup', 'true', 'aria-expanded', opt_data.expanded_ ? 'true' : 'false');
         if (currSelectedIndex__soy6 == -1) {
-          if (label) {
-            label();
-          }
+          var dyn1 = label;
+          if (typeof dyn1 == 'function') dyn1();else if (dyn1 != null) itext(dyn1);
         } else {
-          $renderAsHtml_({ value: opt_data.items[currSelectedIndex__soy6] }, null, opt_ijData);
+          var dyn2 = opt_data.items[currSelectedIndex__soy6];
+          if (typeof dyn2 == 'function') dyn2();else if (dyn2 != null) itext(dyn2);
         }
         itext(' ');
         ie_void('span', null, null, 'class', opt_data.arrowClass ? opt_data.arrowClass : 'caret');
         ie_close('button');
       };
-      $templateAlias1({ body: param12, events: { stateSynced: opt_data.handleDropdownStateSynced_ }, header: param24, ref: 'dropdown' }, null, opt_ijData);
+      $templateAlias1({ body: param14, events: { stateSynced: opt_data.handleDropdownStateSynced_ }, expanded: opt_data.disabled ? false : opt_data.expanded_, header: param28, ref: 'dropdown' }, null, opt_ijData);
       ie_close('div');
     }
     exports.render = $render;
@@ -17689,29 +18175,8 @@ babelHelpers;
       $render.soyTemplateName = 'Select.render';
     }
 
-    /**
-     * @param {{
-     *    value: (!soydata.SanitizedHtml|string)
-     * }} opt_data
-     * @param {(null|undefined)=} opt_ignored
-     * @param {Object<string, *>=} opt_ijData
-     * @return {void}
-     * @suppress {checkTypes}
-     */
-    function $renderAsHtml_(opt_data, opt_ignored, opt_ijData) {
-      soy.asserts.assertType(opt_data.value instanceof Function || opt_data.value instanceof soydata.UnsanitizedText || goog.isString(opt_data.value), 'value', opt_data.value, 'Function');
-      var value = /** @type {Function} */opt_data.value;
-      value();
-    }
-    exports.renderAsHtml_ = $renderAsHtml_;
-    if (goog.DEBUG) {
-      $renderAsHtml_.soyTemplateName = 'Select.renderAsHtml_';
-    }
-
-    exports.render.params = ["label", "arrowClass", "buttonClass", "elementClasses", "handleDropdownStateSynced_", "handleItemClick_", "hiddenInputName", "items", "values", "selectedIndex"];
-    exports.render.types = { "label": "html", "arrowClass": "any", "buttonClass": "any", "elementClasses": "any", "handleDropdownStateSynced_": "any", "handleItemClick_": "any", "hiddenInputName": "any", "items": "any", "values": "any", "selectedIndex": "any" };
-    exports.renderAsHtml_.params = ["value"];
-    exports.renderAsHtml_.types = { "value": "html" };
+    exports.render.params = ["label", "arrowClass", "disabled", "buttonClass", "elementClasses", "expanded_", "handleDropdownStateSynced_", "handleItemClick_", "handleItemKeyDown_", "hiddenInputName", "items", "values", "selectedIndex"];
+    exports.render.types = { "label": "html|string", "arrowClass": "any", "disabled": "any", "buttonClass": "any", "elementClasses": "any", "expanded_": "any", "handleDropdownStateSynced_": "any", "handleItemClick_": "any", "handleItemKeyDown_": "any", "hiddenInputName": "any", "items": "any", "values": "any", "selectedIndex": "any" };
     templates = exports;
     return exports;
   });
@@ -17757,7 +18222,14 @@ babelHelpers;
 		}
 
 		babelHelpers.createClass(Select, [{
-			key: 'findItemIndex_',
+			key: 'attached',
+
+			/**
+    * @inheritDoc
+    */
+			value: function attached() {
+				this.on('itemsChanged', this.handleItemsChanged_);
+			}
 
 			/**
     * Finds the index of the given element in the items array.
@@ -17765,6 +18237,9 @@ babelHelpers;
     * @return {number}
     * @protected
     */
+
+		}, {
+			key: 'findItemIndex_',
 			value: function findItemIndex_(element) {
 				var items = this.element.querySelectorAll('li');
 				for (var i = 0; i < items.length; i++) {
@@ -17802,6 +18277,17 @@ babelHelpers;
 			}
 
 			/**
+    * Gets `seletectIndex`'s default value.
+    * @return {!Dropdown}
+    */
+
+		}, {
+			key: 'getSelectedIndexDefaultValue_',
+			value: function getSelectedIndexDefaultValue_() {
+				return this.label || !this.items.length ? -1 : 0;
+			}
+
+			/**
     * Handles a `stateSynced` event for the dropdown.
     * @param {!Object} data
     * @protected
@@ -17815,9 +18301,26 @@ babelHelpers;
 					// been made visible before we try focusing them.
 					this.focusIndex_(0);
 					this.openedWithKeyboard_ = false;
+				} else if (this.closedWithKeyboard_) {
+					this.element.querySelector('.dropdown-select').focus();
+					this.closedWithKeyboard_ = false;
 				} else if (data.changes.expanded) {
 					this.focusedIndex_ = null;
 				}
+
+				this.expanded_ = this.getDropdown().expanded;
+			}
+
+			/**
+    * Handles the `itemsChanged` event. Sets the default value to the `selectedIndex`.
+    * @param {!Object} data
+    * @protected
+   */
+
+		}, {
+			key: 'handleItemsChanged_',
+			value: function handleItemsChanged_() {
+				this.selectedIndex = this.getSelectedIndexDefaultValue_();
 			}
 
 			/**
@@ -17830,9 +18333,25 @@ babelHelpers;
 		}, {
 			key: 'handleItemClick_',
 			value: function handleItemClick_(event) {
-				this.selectedIndex = this.findItemIndex_(event.delegateTarget);
-				this.getDropdown().close();
+				this.selectItem_(event.delegateTarget);
 				event.preventDefault();
+			}
+
+			/**
+    * Handles a `keydown` event on one of the items. Updates `selectedIndex`
+    * accordingly.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleItemKeyDown_',
+			value: function handleItemKeyDown_(event) {
+				if (event.keyCode === 13 || event.keyCode === 32) {
+					this.closedWithKeyboard_ = true;
+					this.selectItem_(event.delegateTarget);
+					event.preventDefault();
+				}
 			}
 
 			/**
@@ -17844,10 +18363,11 @@ babelHelpers;
 		}, {
 			key: 'handleKeyDown_',
 			value: function handleKeyDown_(event) {
-				if (this.getDropdown().expanded) {
+				if (this.expanded_) {
 					switch (event.keyCode) {
 						case 27:
-							this.getDropdown().close();
+							this.closedWithKeyboard_ = true;
+							this.expanded_ = false;
 							break;
 						case 38:
 							this.focusedIndex_ = core.isDefAndNotNull(this.focusedIndex_) ? this.focusedIndex_ : 1;
@@ -17862,10 +18382,23 @@ babelHelpers;
 					}
 				} else if ((event.keyCode === 13 || event.keyCode === 32) && dom.hasClass(event.target, 'dropdown-select')) {
 					this.openedWithKeyboard_ = true;
-					this.getDropdown().open();
+					this.expanded_ = true;
 					event.preventDefault();
 					return;
 				}
+			}
+
+			/**
+    * Selects the item for the given element, and closes the dropdown.
+    * @param {!Element} itemElement
+    * @protected
+    */
+
+		}, {
+			key: 'selectItem_',
+			value: function selectItem_(itemElement) {
+				this.selectedIndex = this.findItemIndex_(itemElement);
+				this.expanded_ = false;
 			}
 
 			/**
@@ -17913,6 +18446,29 @@ babelHelpers;
 		},
 
 		/**
+   * Block or unblock the component behaviours.
+   * @type {boolean}
+   * @default false
+   */
+		disabled: {
+			validator: core.isBoolean,
+			value: false
+		},
+
+		/**
+   * Flag indicating if the select dropdown is currently expanded.
+   * @type {boolean}
+   */
+		expanded_: {
+			setter: function setter(value) {
+				return !this.disabled ? value : false;
+			},
+			validator: core.isBoolean,
+			value: false,
+			internal: true
+		},
+
+		/**
    * The name of the hidden input field
    * @type {string}
    */
@@ -17941,9 +18497,6 @@ babelHelpers;
    * @type {string}
    */
 		label: {
-			setter: function setter(label) {
-				return Soy.toIncDom(label);
-			},
 			validator: core.isString
 		},
 
@@ -17953,9 +18506,7 @@ babelHelpers;
    */
 		selectedIndex: {
 			validator: core.isNumber,
-			valueFn: function valueFn() {
-				return this.label || !this.items.length ? -1 : 0;
-			}
+			valueFn: 'getSelectedIndexDefaultValue_'
 		},
 
 		/**
@@ -17977,6 +18528,1240 @@ babelHelpers;
 	Select.ELEMENT_CLASSES = 'select';
 
 	this['metal']['Select'] = Select;
+}).call(this);
+'use strict';
+
+(function () {
+	var core = this['metal']['metal'];
+	var dom = this['metal']['dom'];
+	var Align = this['metalNamed']['position']['Align'];
+	var Component = this['metal']['component'];
+	var EventHandler = this['metalNamed']['events']['EventHandler'];
+
+	/**
+  * The base class to be shared between components that have tooltip behavior.
+  * This helps decouple this behavior logic from the UI, which may be different
+  * between components. The Tooltip component itself extends from this, as does
+  * the crystal Popover component, which can be accessed at metal/crystal-popover.
+  */
+
+	var TooltipBase = function (_Component) {
+		babelHelpers.inherits(TooltipBase, _Component);
+
+		function TooltipBase() {
+			babelHelpers.classCallCheck(this, TooltipBase);
+			return babelHelpers.possibleConstructorReturn(this, (TooltipBase.__proto__ || Object.getPrototypeOf(TooltipBase)).apply(this, arguments));
+		}
+
+		babelHelpers.createClass(TooltipBase, [{
+			key: 'attached',
+
+			/**
+    * @inheritDoc
+    */
+			value: function attached() {
+				this.align();
+				this.syncTriggerEvents(this.triggerEvents);
+			}
+
+			/**
+    * @inheritDoc
+    */
+
+		}, {
+			key: 'created',
+			value: function created() {
+				this.currentAlignElement = this.alignElement;
+				this.eventHandler_ = new EventHandler();
+			}
+
+			/**
+    * @inheritDoc
+    */
+
+		}, {
+			key: 'detached',
+			value: function detached() {
+				this.eventHandler_.removeAllListeners();
+			}
+
+			/**
+    * @inheritDoc
+    */
+
+		}, {
+			key: 'disposeInternal',
+			value: function disposeInternal() {
+				babelHelpers.get(TooltipBase.prototype.__proto__ || Object.getPrototypeOf(TooltipBase.prototype), 'disposeInternal', this).call(this);
+				clearTimeout(this.delay_);
+			}
+
+			/**
+    * Aligns the tooltip with the best region around alignElement. The best
+    * region is defined by clockwise rotation starting from the specified
+    * `position`. The element is always aligned in the middle of alignElement
+    * axis.
+    * @param {Element=} opt_alignElement Optional element to align with.
+    */
+
+		}, {
+			key: 'align',
+			value: function align(opt_alignElement) {
+				this.syncCurrentAlignElement(opt_alignElement || this.currentAlignElement);
+			}
+
+			/**
+    * @param {!function()} fn
+    * @param {number} delay
+    * @private
+    */
+
+		}, {
+			key: 'callAsync_',
+			value: function callAsync_(fn, delay) {
+				clearTimeout(this.delay_);
+				this.delay_ = setTimeout(fn.bind(this), delay);
+			}
+
+			/**
+    * Handles hide event triggered by `events`.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleHide',
+			value: function handleHide(event) {
+				var delegateTarget = event.delegateTarget;
+				var interactingWithDifferentTarget = delegateTarget && delegateTarget !== this.currentAlignElement;
+				this.callAsync_(function () {
+					if (this.locked_) {
+						return;
+					}
+					if (interactingWithDifferentTarget) {
+						this.currentAlignElement = delegateTarget;
+					} else {
+						this.visible = false;
+						this.syncVisible(false);
+					}
+				}, this.delay[1]);
+			}
+
+			/**
+    * Handles show event triggered by `events`.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleShow',
+			value: function handleShow(event) {
+				var delegateTarget = event.delegateTarget;
+				babelHelpers.get(TooltipBase.prototype.__proto__ || Object.getPrototypeOf(TooltipBase.prototype), 'syncVisible', this).call(this, true);
+				this.callAsync_(function () {
+					this.currentAlignElement = delegateTarget;
+					this.visible = true;
+				}, this.delay[0]);
+			}
+
+			/**
+    * Handles toggle event triggered by `events`.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleToggle',
+			value: function handleToggle(event) {
+				if (this.visible) {
+					this.handleHide(event);
+				} else {
+					this.handleShow(event);
+				}
+			}
+
+			/**
+    * Locks tooltip visibility.
+    * @param {!Event} event
+    */
+
+		}, {
+			key: 'lock',
+			value: function lock() {
+				this.locked_ = true;
+			}
+
+			/**
+    * Unlocks tooltip visibility.
+    * @param {!Event} event
+    */
+
+		}, {
+			key: 'unlock',
+			value: function unlock(event) {
+				this.locked_ = false;
+				this.handleHide(event);
+			}
+
+			/**
+    * Synchronizes the value of the `currentAlignElement` internal state
+    * with the `alignElement`.
+    * @param {Element} alignElement
+    */
+
+		}, {
+			key: 'syncAlignElement',
+			value: function syncAlignElement(alignElement) {
+				this.currentAlignElement = alignElement;
+			}
+
+			/**
+    * State synchronization logic for `currentAlignElement`.
+    * @param {Element} alignElement
+    * @param {Element} prevAlignElement
+    */
+
+		}, {
+			key: 'syncCurrentAlignElement',
+			value: function syncCurrentAlignElement(alignElement, prevAlignElement) {
+				if (prevAlignElement) {
+					alignElement.removeAttribute('aria-describedby');
+				}
+				if (alignElement) {
+					var dataTitle = alignElement.getAttribute('data-title');
+					if (dataTitle) {
+						this.title = dataTitle;
+					}
+					if (this.inDocument) {
+						this.alignedPosition = TooltipBase.Align.align(this.element, alignElement, this.position);
+					}
+				}
+			}
+
+			/**
+    * State synchronization logic for `position`.
+    */
+
+		}, {
+			key: 'syncPosition',
+			value: function syncPosition() {
+				this.syncCurrentAlignElement(this.currentAlignElement);
+			}
+
+			/**
+    * State synchronization logic for `selector`.
+    */
+
+		}, {
+			key: 'syncSelector',
+			value: function syncSelector() {
+				this.syncTriggerEvents(this.triggerEvents);
+			}
+
+			/**
+    * State synchronization logic for `triggerEvents`.
+    * @param {!Array<string>} triggerEvents
+    */
+
+		}, {
+			key: 'syncTriggerEvents',
+			value: function syncTriggerEvents(triggerEvents) {
+				if (!this.inDocument) {
+					return;
+				}
+				this.eventHandler_.removeAllListeners();
+				var selector = this.selector;
+				if (!selector) {
+					return;
+				}
+
+				this.eventHandler_.add(this.on('mouseenter', this.lock), this.on('mouseleave', this.unlock));
+
+				if (triggerEvents[0] === triggerEvents[1]) {
+					this.eventHandler_.add(dom.delegate(document, triggerEvents[0], selector, this.handleToggle.bind(this)));
+				} else {
+					this.eventHandler_.add(dom.delegate(document, triggerEvents[0], selector, this.handleShow.bind(this)), dom.delegate(document, triggerEvents[1], selector, this.handleHide.bind(this)));
+				}
+			}
+
+			/**
+    * State synchronization logic for `visible`. Realigns the tooltip.
+    */
+
+		}, {
+			key: 'syncVisible',
+			value: function syncVisible() {
+				this.align();
+			}
+		}]);
+		return TooltipBase;
+	}(Component);
+
+	/**
+  * @inheritDoc
+  * @see `Align` class.
+  * @static
+  */
+
+
+	TooltipBase.Align = Align;
+
+	/**
+  * TooltipBase state definition.
+  * @type {!Object}
+  * @static
+  */
+	TooltipBase.STATE = {
+		/**
+   * The current position of the tooltip after being aligned via `Align.align`.
+   * @type {number}
+   */
+		alignedPosition: {
+			validator: TooltipBase.Align.isValidPosition
+		},
+
+		/**
+   * Element to align tooltip with.
+   * @type {Element}
+   */
+		alignElement: {
+			setter: dom.toElement
+		},
+
+		/**
+   * The current element aligned tooltip with.
+   * @type {Element}
+   */
+		currentAlignElement: {
+			internal: true,
+			setter: dom.toElement
+		},
+
+		/**
+   * Delay showing and hiding the tooltip (ms).
+   * @type {!Array<number>}
+   * @default [ 500, 250 ]
+   */
+		delay: {
+			validator: Array.isArray,
+			value: [500, 250]
+		},
+
+		/**
+   * Trigger events used to bind handlers to show and hide tooltip.
+   * @type {!Array<string>}
+   * @default ['mouseenter', 'mouseleave']
+   */
+		triggerEvents: {
+			validator: Array.isArray,
+			value: ['mouseenter', 'mouseleave']
+		},
+
+		/**
+   * If a selector is provided, tooltip objects will be delegated to the
+   * specified targets by setting the `alignElement`.
+   * @type {?string}
+   */
+		selector: {
+			validator: core.isString
+		},
+
+		/**
+   * The position to try alignment. If not possible the best position will be
+   * found.
+   * @type {number}
+   * @default Align.Bottom
+   */
+		position: {
+			validator: TooltipBase.Align.isValidPosition,
+			value: TooltipBase.Align.Bottom
+		},
+
+		/**
+   * Content to be placed inside tooltip.
+   * @type {string}
+   */
+		title: {}
+	};
+
+	/**
+  * CSS classes used for each align position.
+  * @type {!Array}
+  * @static
+  */
+	TooltipBase.PositionClasses = ['top', 'right', 'bottom', 'left'];
+
+	this['metal']['TooltipBase'] = TooltipBase;
+}).call(this);
+'use strict';
+
+(function () {
+  /* jshint ignore:start */
+  var Component = this['metal']['component'];
+  var Soy = this['metal']['Soy'];
+
+  var templates;
+  goog.loadModule(function (exports) {
+
+    // This file was automatically generated from Tooltip.soy.
+    // Please don't edit this file by hand.
+
+    /**
+     * @fileoverview Templates in namespace Tooltip.
+     * @public
+     */
+
+    goog.module('Tooltip.incrementaldom');
+
+    /** @suppress {extraRequire} */
+    var soy = goog.require('soy');
+    /** @suppress {extraRequire} */
+    var soydata = goog.require('soydata');
+    /** @suppress {extraRequire} */
+    goog.require('goog.asserts');
+    /** @suppress {extraRequire} */
+    goog.require('soy.asserts');
+    /** @suppress {extraRequire} */
+    goog.require('goog.i18n.bidi');
+    /** @suppress {extraRequire} */
+    goog.require('goog.string');
+    var IncrementalDom = goog.require('incrementaldom');
+    var ie_open = IncrementalDom.elementOpen;
+    var ie_close = IncrementalDom.elementClose;
+    var ie_void = IncrementalDom.elementVoid;
+    var ie_open_start = IncrementalDom.elementOpenStart;
+    var ie_open_end = IncrementalDom.elementOpenEnd;
+    var itext = IncrementalDom.text;
+    var iattr = IncrementalDom.attr;
+
+    /**
+     * @param {{
+     *    alignedPosition: (?),
+     *    elementClasses: (?),
+     *    position: (?),
+     *    title: (?soydata.SanitizedHtml|string|undefined)
+     * }} opt_data
+     * @param {(null|undefined)=} opt_ignored
+     * @param {Object<string, *>=} opt_ijData
+     * @return {void}
+     * @suppress {checkTypes}
+     */
+    function $render(opt_data, opt_ignored, opt_ijData) {
+      opt_data = opt_data || {};
+      soy.asserts.assertType(opt_data.title == null || opt_data.title instanceof Function || opt_data.title instanceof goog.soy.data.SanitizedContent || opt_data.title instanceof soydata.UnsanitizedText || goog.isString(opt_data.title), 'title', opt_data.title, '?soydata.SanitizedHtml|string|undefined');
+      var title = /** @type {?soydata.SanitizedHtml|string|undefined} */opt_data.title;
+      var positionClasses__soy3 = ['top', 'top', 'right', 'bottom', 'bottom', 'bottom', 'left', 'top'];
+      var currentPosition__soy4 = opt_data.alignedPosition != null ? opt_data.alignedPosition : opt_data.position;
+      var positionClass__soy5 = currentPosition__soy4 != null ? positionClasses__soy3[currentPosition__soy4] : 'bottom';
+      ie_open('div', null, null, 'class', 'tooltip ' + positionClass__soy5 + (opt_data.elementClasses ? ' ' + opt_data.elementClasses : ''), 'role', 'tooltip');
+      ie_void('div', null, null, 'class', 'tooltip-arrow');
+      ie_open('section', null, null, 'class', 'tooltip-inner');
+      if (title) {
+        var dyn0 = title;
+        if (typeof dyn0 == 'function') dyn0();else if (dyn0 != null) itext(dyn0);
+      }
+      ie_close('section');
+      ie_close('div');
+    }
+    exports.render = $render;
+    if (goog.DEBUG) {
+      $render.soyTemplateName = 'Tooltip.render';
+    }
+
+    exports.render.params = ["title", "alignedPosition", "elementClasses", "position"];
+    exports.render.types = { "title": "html|string", "alignedPosition": "any", "elementClasses": "any", "position": "any" };
+    templates = exports;
+    return exports;
+  });
+
+  var Tooltip = function (_Component) {
+    babelHelpers.inherits(Tooltip, _Component);
+
+    function Tooltip() {
+      babelHelpers.classCallCheck(this, Tooltip);
+      return babelHelpers.possibleConstructorReturn(this, (Tooltip.__proto__ || Object.getPrototypeOf(Tooltip)).apply(this, arguments));
+    }
+
+    return Tooltip;
+  }(Component);
+
+  Soy.register(Tooltip, templates);
+  this['metalNamed']['Tooltip'] = this['metalNamed']['Tooltip'] || {};
+  this['metalNamed']['Tooltip']['Tooltip'] = Tooltip;
+  this['metalNamed']['Tooltip']['templates'] = templates;
+  this['metal']['Tooltip'] = templates;
+  /* jshint ignore:end */
+}).call(this);
+'use strict';
+
+(function () {
+	var dom = this['metal']['dom'];
+	var Soy = this['metal']['Soy'];
+	var TooltipBase = this['metal']['TooltipBase'];
+	var templates = this['metal']['Tooltip'];
+
+	/**
+  * Tooltip component.
+  */
+
+	var Tooltip = function (_TooltipBase) {
+		babelHelpers.inherits(Tooltip, _TooltipBase);
+
+		function Tooltip() {
+			babelHelpers.classCallCheck(this, Tooltip);
+			return babelHelpers.possibleConstructorReturn(this, (Tooltip.__proto__ || Object.getPrototypeOf(Tooltip)).apply(this, arguments));
+		}
+
+		babelHelpers.createClass(Tooltip, [{
+			key: 'hideCompletely_',
+
+			/**
+    * Hides the alert completely (with display "none"). This is called after the
+    * hiding animation is done.
+    * @protected
+    */
+			value: function hideCompletely_() {
+				if (!this.isDisposed() && this.element && !this.visible) {
+					this.element.style.display = 'none';
+				}
+			}
+
+			/**
+    * State synchronization logic for `visible`. Updates the element's opacity,
+    * since bootstrap uses opacity instead of display for tooltip visibility.
+    * @param {boolean} visible
+    */
+
+		}, {
+			key: 'syncVisible',
+			value: function syncVisible(visible) {
+				if (!visible) {
+					dom.once(this.element, 'animationend', this.hideCompletely_.bind(this));
+					dom.once(this.element, 'transitionend', this.hideCompletely_.bind(this));
+				} else {
+					this.element.style.display = '';
+				}
+
+				this.element.style.opacity = visible ? 1 : '';
+				babelHelpers.get(Tooltip.prototype.__proto__ || Object.getPrototypeOf(Tooltip.prototype), 'syncVisible', this).call(this, visible);
+			}
+		}]);
+		return Tooltip;
+	}(TooltipBase);
+
+	Soy.register(Tooltip, templates);
+
+	/**
+  * @inheritDoc
+  * @see `Align` class.
+  * @static
+  */
+	Tooltip.Align = TooltipBase.Align;
+
+	this['metal']['Tooltip'] = Tooltip;
+	this['metalNamed']['Tooltip'] = this['metalNamed']['Tooltip'] || {};
+	this['metalNamed']['Tooltip']['Tooltip'] = Tooltip;
+	this['metalNamed']['Tooltip']['TooltipBase'] = TooltipBase;
+}).call(this);
+'use strict';
+
+(function () {
+  /* jshint ignore:start */
+  var Component = this['metal']['component'];
+  var Soy = this['metal']['Soy'];
+
+  var templates;
+  goog.loadModule(function (exports) {
+
+    // This file was automatically generated from Tabs.soy.
+    // Please don't edit this file by hand.
+
+    /**
+     * @fileoverview Templates in namespace Tabs.
+     * @public
+     */
+
+    goog.module('Tabs.incrementaldom');
+
+    /** @suppress {extraRequire} */
+    var soy = goog.require('soy');
+    /** @suppress {extraRequire} */
+    var soydata = goog.require('soydata');
+    /** @suppress {extraRequire} */
+    goog.require('goog.i18n.bidi');
+    /** @suppress {extraRequire} */
+    goog.require('goog.asserts');
+    /** @suppress {extraRequire} */
+    goog.require('goog.string');
+    var IncrementalDom = goog.require('incrementaldom');
+    var ie_open = IncrementalDom.elementOpen;
+    var ie_close = IncrementalDom.elementClose;
+    var ie_void = IncrementalDom.elementVoid;
+    var ie_open_start = IncrementalDom.elementOpenStart;
+    var ie_open_end = IncrementalDom.elementOpenEnd;
+    var itext = IncrementalDom.text;
+    var iattr = IncrementalDom.attr;
+
+    /**
+     * @param {Object<string, *>=} opt_data
+     * @param {(null|undefined)=} opt_ignored
+     * @param {Object<string, *>=} opt_ijData
+     * @return {void}
+     * @suppress {checkTypes}
+     */
+    function $render(opt_data, opt_ignored, opt_ijData) {
+      var $$temp;
+      if (opt_data.tabs.length > 0) {
+        ie_open('ul', null, null, 'class', 'nav ' + (opt_data.type != 'none' ? 'nav-' + opt_data.type : '') + ' ' + (($$temp = opt_data.elementClasses) == null ? '' : $$temp), 'role', 'tablist');
+        var currentTabList37 = opt_data.tabs;
+        var currentTabListLen37 = currentTabList37.length;
+        for (var currentTabIndex37 = 0; currentTabIndex37 < currentTabListLen37; currentTabIndex37++) {
+          var currentTabData37 = currentTabList37[currentTabIndex37];
+          var isDisabled__soy10 = opt_data.disabled != null && opt_data.disabled || currentTabData37.disabled;
+          var isCurrentTab__soy11 = opt_data.tab == currentTabIndex37;
+          ie_open_start('li');
+          iattr('class', (isDisabled__soy10 ? 'disabled' : '') + ' ' + (isCurrentTab__soy11 ? 'active' : ''));
+          iattr('data-index', currentTabIndex37);
+          if (!isDisabled__soy10 && !isCurrentTab__soy11) {
+            iattr('data-onclick', 'onClickItem');
+          }
+          iattr('role', 'presentation');
+          ie_open_end();
+          ie_open_start('a');
+          iattr('aria-expanded', isCurrentTab__soy11 ? 'true' : 'false');
+          iattr('data-toggle', 'tab');
+          iattr('data-unfocusable', isDisabled__soy10 ? 'true' : 'false');
+          if (!isDisabled__soy10) {
+            iattr('href', '#');
+          }
+          iattr('ref', 'tab-' + currentTabIndex37);
+          iattr('role', 'tab');
+          iattr('tabindex', isCurrentTab__soy11 ? '0' : '-1');
+          ie_open_end();
+          var dyn0 = currentTabData37.label;
+          if (typeof dyn0 == 'function') dyn0();else if (dyn0 != null) itext(dyn0);
+          ie_close('a');
+          ie_close('li');
+        }
+        ie_close('ul');
+      }
+    }
+    exports.render = $render;
+    if (goog.DEBUG) {
+      $render.soyTemplateName = 'Tabs.render';
+    }
+
+    exports.render.params = ["tab", "tabs", "disabled", "elementClasses", "type"];
+    exports.render.types = { "tab": "any", "tabs": "any", "disabled": "any", "elementClasses": "any", "type": "any" };
+    templates = exports;
+    return exports;
+  });
+
+  var Tabs = function (_Component) {
+    babelHelpers.inherits(Tabs, _Component);
+
+    function Tabs() {
+      babelHelpers.classCallCheck(this, Tabs);
+      return babelHelpers.possibleConstructorReturn(this, (Tabs.__proto__ || Object.getPrototypeOf(Tabs)).apply(this, arguments));
+    }
+
+    return Tabs;
+  }(Component);
+
+  Soy.register(Tabs, templates);
+  this['metalNamed']['Tabs'] = this['metalNamed']['Tabs'] || {};
+  this['metalNamed']['Tabs']['Tabs'] = Tabs;
+  this['metalNamed']['Tabs']['templates'] = templates;
+  this['metal']['Tabs'] = templates;
+  /* jshint ignore:end */
+}).call(this);
+'use strict';
+
+(function () {
+	var core = this['metal']['metal'];
+	var EventEmitter = this['metal']['events'];
+
+	/**
+  * Listens to keyboard events and uses them to move focus between different
+  * elements from a component (via the arrow keys for example).
+  * By default `KeyboardFocusManager` will assume that all focusable elements
+  * in the component will have refs that follow the pattern in
+  * KeyboardFocusManager.REF_REGEX, which includes a position number. The arrow
+  * keys will then automatically move between elements by
+  * incrementing/decrementing this position.
+  * It's possible to fully customize this behavior by passing a function to
+  * `setFocusHandler`. For more details check this function's docs.
+  */
+
+	var KeyboardFocusManager = function (_EventEmitter) {
+		babelHelpers.inherits(KeyboardFocusManager, _EventEmitter);
+
+		/**
+   * Constructor for `KeyboardFocusManager`.
+   * @param {!Component} component
+   * @param {string=} opt_selector
+   */
+		function KeyboardFocusManager(component, opt_selector) {
+			babelHelpers.classCallCheck(this, KeyboardFocusManager);
+
+			var _this = babelHelpers.possibleConstructorReturn(this, (KeyboardFocusManager.__proto__ || Object.getPrototypeOf(KeyboardFocusManager)).call(this));
+
+			_this.component_ = component;
+			_this.selector_ = opt_selector || '*';
+			_this.handleKey_ = _this.handleKey_.bind(_this);
+			return _this;
+		}
+
+		/**
+   * Builds a ref string for the given position.
+   * @param {string} prefix
+   * @param {number|string} position
+   * @return {string}
+   * @protected
+   */
+
+
+		babelHelpers.createClass(KeyboardFocusManager, [{
+			key: 'buildRef_',
+			value: function buildRef_(prefix, position) {
+				return prefix + position;
+			}
+
+			/**
+    * @inheritDoc
+    */
+
+		}, {
+			key: 'disposeInternal',
+			value: function disposeInternal() {
+				babelHelpers.get(KeyboardFocusManager.prototype.__proto__ || Object.getPrototypeOf(KeyboardFocusManager.prototype), 'disposeInternal', this).call(this);
+				this.stop();
+				this.component_ = null;
+				this.selector_ = null;
+			}
+
+			/**
+    * Gets the next focusable element, that is, the next element that doesn't
+    * have the `data-unfocusable` attribute set to `true`.
+    * @param {string} prefix
+    * @param {number} position
+    * @param {number} increment
+    * @return {string}
+    * @protected
+    */
+
+		}, {
+			key: 'getNextFocusable_',
+			value: function getNextFocusable_(prefix, position, increment) {
+				var initialPosition = position;
+				var element = void 0;
+				var ref = void 0;
+				do {
+					position = this.increment_(position, increment);
+					ref = this.buildRef_(prefix, position);
+					element = this.component_.refs[ref];
+				} while (this.isFocusable_(element) && position !== initialPosition);
+				return element ? ref : null;
+			}
+
+			/**
+    * Handles a `keydown` event. Decides if a new element should be focused
+    * according to the key that was pressed.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleKey_',
+			value: function handleKey_(event) {
+				var element = this.focusHandler_ && this.focusHandler_(event);
+				if (!this.focusHandler_ || element === true) {
+					element = this.handleKeyDefault_(event);
+				}
+
+				var originalValue = element;
+				if (!core.isElement(element)) {
+					element = this.component_.refs[element];
+				}
+				if (element) {
+					element.focus();
+					this.emit(KeyboardFocusManager.EVENT_FOCUSED, {
+						element: element,
+						ref: core.isString(originalValue) ? originalValue : null
+					});
+				}
+			}
+
+			/**
+    * Handles a key press according to the default behavior. Assumes that all
+    * focusable elements in the component will have refs that follow the pattern
+    * in KeyboardFocusManager.REF_REGEX, which includes a position number. The
+    * arrow keys will then automatically move between elements by
+    * incrementing/decrementing the position.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleKeyDefault_',
+			value: function handleKeyDefault_(event) {
+				var ref = event.delegateTarget.getAttribute('ref');
+				var matches = KeyboardFocusManager.REF_REGEX.exec(ref);
+				if (!matches) {
+					return;
+				}
+
+				var position = parseInt(matches[1], 10);
+				var prefix = ref.substr(0, ref.length - matches[1].length);
+				switch (event.keyCode) {
+					case 37:
+					case 38:
+						// Left/up arrow keys will focus the previous element.
+						return this.getNextFocusable_(prefix, position, -1);
+					case 39:
+					case 40:
+						// Right/down arrow keys will focus the next element.
+						return this.getNextFocusable_(prefix, position, 1);
+				}
+			}
+
+			/**
+    * Increments the given position, making sure to follow circular rules if
+    * enabled.
+    * @param {number} position
+    * @param {number} increment
+    * @return {number}
+    * @protected
+    */
+
+		}, {
+			key: 'increment_',
+			value: function increment_(position, increment) {
+				var size = this.circularLength_;
+				position += increment;
+				if (core.isNumber(size)) {
+					if (position < 0) {
+						position = size - 1;
+					} else if (position >= size) {
+						position = 0;
+					}
+				}
+				return position;
+			}
+
+			/**
+    * Checks if the given element is focusable.
+    * @param {Element} element
+    * @return {boolean}
+    * @protected
+    */
+
+		}, {
+			key: 'isFocusable_',
+			value: function isFocusable_(element) {
+				return element && element.getAttribute('data-unfocusable') === 'true';
+			}
+
+			/**
+    * Sets the length of the focusable elements. If a number is passed, the
+    * default focusing behavior will follow a circular pattern, going from the
+    * last to the first element, and vice versa.
+    * @param {?number} circularLength
+    * @chainable
+    */
+
+		}, {
+			key: 'setCircularLength',
+			value: function setCircularLength(circularLength) {
+				this.circularLength_ = circularLength;
+				return this;
+			}
+
+			/**
+    * Sets a handler function that will be called to decide which element should
+    * be focused according to the key that was pressed. It will receive the key
+    * event and should return one of the following:
+    *   - `true`, if the default behavior should be triggered instead.
+    *   - A string, representing a `ref` to the component element that should be
+    *       focused.
+    *   - The element itself that should be focused.
+    *   - Anything else, if nothing should be focused (skipping default behavior
+    *       too).
+    * @param {function(key: string)} focusHandler
+    * @chainable
+    */
+
+		}, {
+			key: 'setFocusHandler',
+			value: function setFocusHandler(focusHandler) {
+				this.focusHandler_ = focusHandler;
+				return this;
+			}
+
+			/**
+    * Starts listening to keyboard events and handling element focus.
+    * @chainable
+    */
+
+		}, {
+			key: 'start',
+			value: function start() {
+				if (!this.handle_) {
+					this.handle_ = this.component_.delegate('keydown', this.selector_, this.handleKey_);
+				}
+				return this;
+			}
+
+			/**
+    * Stops listening to keyboard events and handling element focus.
+    * @chainable
+    */
+
+		}, {
+			key: 'stop',
+			value: function stop() {
+				if (this.handle_) {
+					this.handle_.removeListener();
+					this.handle_ = null;
+				}
+				return this;
+			}
+		}]);
+		return KeyboardFocusManager;
+	}(EventEmitter);
+
+	// Event emitted when a selected element was focused via the keyboard.
+
+
+	KeyboardFocusManager.EVENT_FOCUSED = 'focused';
+
+	// The regex used to extract the position from an element's ref.
+	KeyboardFocusManager.REF_REGEX = /.+-(\d+)$/;
+
+	this['metal']['KeyboardFocusManager'] = KeyboardFocusManager;
+}).call(this);
+'use strict';
+
+(function () {
+	var core = this['metal']['metal'];
+	var templates = this['metal']['Tabs'];
+	var Component = this['metal']['component'];
+	var KeyboardFocusManager = this['metal']['KeyboardFocusManager'];
+	var Soy = this['metal']['Soy'];
+
+	/**
+  * UI Component to navigate through tabbed data.
+  */
+
+	var Tabs = function (_Component) {
+		babelHelpers.inherits(Tabs, _Component);
+
+		function Tabs() {
+			babelHelpers.classCallCheck(this, Tabs);
+			return babelHelpers.possibleConstructorReturn(this, (Tabs.__proto__ || Object.getPrototypeOf(Tabs)).apply(this, arguments));
+		}
+
+		babelHelpers.createClass(Tabs, [{
+			key: 'attached',
+
+			/**
+    * @inheritDoc
+    */
+			value: function attached() {
+				this.keyboardFocusManager_ = new KeyboardFocusManager(this, 'a').setCircularLength(this.tabs.length).start();
+			}
+
+			/**
+    * Adds a tab to the tabs array at the specified index if given or
+    * appends it at the end.
+    * @param {Object} tab
+    * @param {number} index
+    */
+
+		}, {
+			key: 'addTab',
+			value: function addTab(tab, index) {
+				if (core.isNumber(index)) {
+					this.tabs.splice(index, 0, tab);
+				} else {
+					this.tabs.push(tab);
+				}
+
+				this.tabs = this.tabs;
+			}
+
+			/**
+    * Adds a tab to the tabs array at the specified index if given or
+    * appends it at the end.
+    * @param {string} label
+    * @param {boolean} disabled
+    * @param {number} index
+    */
+
+		}, {
+			key: 'addTabByName',
+			value: function addTabByName(label, disabled, index) {
+				if (core.isString(label)) {
+					var tab = {
+						label: label,
+						disabled: disabled
+					};
+
+					if (!core.isDef(disabled)) {
+						tab.disabled = false;
+					}
+
+					this.addTab(tab, index);
+				}
+			}
+
+			/**
+    * @inheritDoc
+    */
+
+		}, {
+			key: 'created',
+			value: function created() {
+				this.lastState_ = {
+					tab: this.tab
+				};
+
+				this.on(Tabs.Events.CHANGE_REQUEST, this.defaultChangeRequestFn_, true);
+			}
+
+			/**
+    * Default `changeRequest` function, sets new state of tabs.
+    * @param {EventFacade} event
+    * @protected
+    */
+
+		}, {
+			key: 'defaultChangeRequestFn_',
+			value: function defaultChangeRequestFn_(event) {
+				this.setState_(event.state);
+			}
+
+			/**
+    * Fires `changeRequest` event.
+    * @param {Object} state
+    * @protected
+    */
+
+		}, {
+			key: 'dispatchRequest_',
+			value: function dispatchRequest_(state) {
+				this.emit(Tabs.Events.CHANGE_REQUEST, {
+					lastState: this.lastState_,
+					state: state,
+					totalTabs: this.tabs.length
+				});
+			}
+
+			/**
+    * @inheritDoc
+    */
+
+		}, {
+			key: 'disposed',
+			value: function disposed() {
+				this.keyboardFocusManager_.dispose();
+				this.keyboardFocusManager_ = null;
+			}
+
+			/**
+    * Removes the tab at the given index from the tabs array.
+    * @return {number} Returns the index of the first tab which is not disabled.
+    */
+
+		}, {
+			key: 'findFirstAvailableIndex_',
+			value: function findFirstAvailableIndex_() {
+				if (!this.disabled) {
+					for (var i = 0; i < this.tabs.length; i++) {
+						if (!this.tabs[i].disabled) {
+							return i;
+						}
+					}
+				}
+
+				return -1;
+			}
+
+			/**
+    * `onClick` handler for tab items.
+    * @param {EventFacade} event
+    */
+
+		}, {
+			key: 'onClickItem',
+			value: function onClickItem(event) {
+				var item = event.delegateTarget;
+
+				event.preventDefault();
+
+				var index = parseInt(item.getAttribute('data-index'));
+
+				this.dispatchRequest_({
+					tab: index
+				});
+			}
+
+			/**
+    * Removes the tab at the given index from the tabs array.
+    * @param  {number} index
+    * @return {Object} Returns the removed tab.
+    */
+
+		}, {
+			key: 'removeTab',
+			value: function removeTab(index) {
+				if (core.isNumber(index) && index > -1 && index < this.tabs.length) {
+					var tabs = this.tabs.splice(index, 1);
+
+					this.tabs = this.tabs;
+
+					return tabs[0];
+				}
+			}
+
+			/**
+    * Set the new tabs state. The state is a payload object
+    * containing the tab number, e.g. `{tab:1}`.
+    * @param {Object} state
+    * @protected
+    */
+
+		}, {
+			key: 'setState_',
+			value: function setState_(state) {
+				this.tab = state.tab;
+
+				this.lastState_ = state;
+			}
+
+			/**
+    * Disables the tab at the given index in the tabs array.
+    * @param  {number} index
+    * @return {boolean} disabled
+    */
+
+		}, {
+			key: 'setTabDisabled',
+			value: function setTabDisabled(index, disabled) {
+				if (core.isNumber(index) && core.isBoolean(disabled)) {
+					this.tabs[index].disabled = disabled;
+
+					this.tabs = this.tabs;
+				}
+			}
+
+			/**
+    * Synchronizes the component with the current value of the `tabs` state
+    * property. Updates the length of the circular focus handling for tabs.
+    */
+
+		}, {
+			key: 'syncTabs',
+			value: function syncTabs() {
+				if (this.keyboardFocusManager_) {
+					this.keyboardFocusManager_.setCircularLength(this.tabs.length);
+				}
+			}
+
+			/**
+    * Toggles the disabled state of the tab at the given index in the tabs array.
+    * If the tab at the given index is active, then the next nearest enabled tab
+    * will become the new active tab.
+    * @param  {number} index
+    */
+
+		}, {
+			key: 'toggleTabDisabled',
+			value: function toggleTabDisabled(index) {
+				if (core.isNumber(index) && index >= 0 && index < this.tabs.length) {
+					this.tabs[index].disabled = !this.tabs[index].disabled;
+
+					if (index === this.tab) {
+						this.tab = this.findFirstAvailableIndex_();
+					}
+
+					this.tabs = this.tabs;
+				}
+			}
+		}]);
+		return Tabs;
+	}(Component);
+
+	Soy.register(Tabs, templates);
+
+	Tabs.Events = {
+		CHANGE_REQUEST: 'changeRequest'
+	};
+
+	/**
+  * Default types used to style the tabs component.
+  */
+	Tabs.TYPES = {
+		NONE: 'none',
+		PILLS: 'pills',
+		TABS: 'tabs'
+	};
+
+	/**
+  * State definition.
+  * @type {!Object}
+  * @static
+  */
+	Tabs.STATE = {
+		/**
+   * Determines if the whole component should be disabled or not.
+   * @type {boolean}
+   * @default false
+   */
+		disabled: {
+			validator: core.isBoolean,
+			value: false
+		},
+
+		/**
+   * Tab to display on initial paint. It has two attributes, 'label', which is
+   * required and 'disabled' which is optional.
+   * @type {number}
+   * @default Default will be set by the valueFn.
+   */
+		tab: {
+			validator: core.isNumber,
+			valueFn: 'findFirstAvailableIndex_'
+		},
+
+		/**
+   * Tabs array, holding the actual tabs.
+   * @type {Array}
+   * @default []
+   */
+		tabs: {
+			validator: function validator(value) {
+				return value.every(function (item) {
+					return !!item.label;
+				});
+			},
+			value: []
+		},
+
+		/**
+   * Type currently being used to style the tabs component.
+   * @type {string}
+   * @default {string}
+   */
+		type: {
+			validator: function validator(value) {
+				return value.toUpperCase() in Tabs.TYPES;
+			},
+			value: Tabs.TYPES.TABS
+		}
+	};
+
+	this['metal']['Tabs'] = Tabs;
 }).call(this);
 'use strict';
 
@@ -18093,12 +19878,6 @@ babelHelpers;
 		}
 
 		babelHelpers.createClass(SampleList, [{
-			key: 'getSelectItems',
-			value: function getSelectItems() {}
-		}, {
-			key: 'getSelectValues',
-			value: function getSelectValues() {}
-		}, {
 			key: 'fillItems',
 			value: function fillItems(indexFile) {
 				var that = this;
@@ -18117,7 +19896,6 @@ babelHelpers;
 						sampleDirName: dirName
 					});
 					that.items[dirName] = sample;
-					console.log(description, dirName);
 					items.push(description);
 					values.push(dirName);
 				});
@@ -18187,9 +19965,10 @@ babelHelpers;
 	var Soy = this['metal']['Soy'];
 	var dom = this['metal']['dom'];
 	var Ajax = this['metal']['Ajax'];
-	//import Toggler from 'metal-toggler';
-
-	var State = this['metal']['state'];
+	var Toggler = this['metal']['Toggler'];
+	var Select = this['metal']['Select'];
+	var Tooltip = this['metal']['Tooltip'];
+	var Tabs = this['metal']['Tabs'];
 	var SampleList = this['metal']['SampleList'];
 	var IFrame = this['metal']['IFrame'];
 	/**
@@ -18260,11 +20039,11 @@ babelHelpers;
 					that.editor[e] = editor;
 				});
 
-				this.iframe = new IFrame();
+				this.iframe = new IFrame({
+					parentElement: this.element.querySelector('.metal-playground-result-content')
+				});
 
-				//this.iframe.loadMetal();
-
-				var iFrameCreatorRunner = this.iframe.appendIFrame.bind(this.iframe, this.element.querySelector('.metal-playground-result-content'));
+				var iFrameCreatorRunner = this.iframe.createIFrame.bind(this.iframe);
 
 				setTimeout(iFrameCreatorRunner, 0);
 			}

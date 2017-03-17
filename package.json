@@ -32,9 +32,12 @@
     "metal-dom": "^2.6.4",
     "metal-events": "^2.6.4",
     "metal-soy": "^2.7.0",
-    "metal-toggler": "^1.0.0-rc.11",
     "metal-ajax": "^2.0.3",
-    "metal-select": "^2.0.4"
+    "metal-select": "^2.0.4",
+
+    "metal-tabs": "^2.3.0",
+    "metal-toggler": "^2.0.0",
+    "metal-tooltip": "^2.0.3"
   },
   "devDependencies": {
     "babel-cli": "^6.24.0",

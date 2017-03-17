@@ -19,14 +19,6 @@ class SampleList extends State {
 		);
 	}
 
-	getSelectItems() {
-
-	}
-
-	getSelectValues() {
-
-	}
-
 	fillItems(indexFile) {
 		var that = this;
 
@@ -44,7 +36,6 @@ class SampleList extends State {
 				sampleDirName: dirName
 			});
 			that.items[dirName] = sample;
-			console.log(description, dirName);
 			items.push(description);
 			values.push(dirName);
 		});
