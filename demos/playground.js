@@ -14447,6 +14447,7 @@ babelHelpers;
       ie_open('div', null, null, 'class', 'metal-playground');
       ie_open('div', null, null, 'class', 'row');
       $pane({ title: 'HTML', type: 'html' }, null, opt_ijData);
+      $pane({ title: 'Soy', type: 'soy' }, null, opt_ijData);
       $pane({ title: 'CSS', type: 'css' }, null, opt_ijData);
       $pane({ title: 'MetalJS', type: 'js' }, null, opt_ijData);
       ie_close('div');
@@ -14480,7 +14481,7 @@ babelHelpers;
       var type = /** @type {string|goog.soy.data.SanitizedContent} */opt_data.type;
       soy.asserts.assertType(goog.isString(opt_data.title) || opt_data.title instanceof goog.soy.data.SanitizedContent, 'title', opt_data.title, 'string|goog.soy.data.SanitizedContent');
       var title = /** @type {string|goog.soy.data.SanitizedContent} */opt_data.title;
-      ie_open('div', null, null, 'class', 'metal-playground-pane col-md-4');
+      ie_open('div', null, null, 'class', 'metal-playground-pane col-md-3');
       ie_open('div', null, null, 'class', 'metal-playground-header');
       var dyn0 = title;
       if (typeof dyn0 == 'function') dyn0();else if (dyn0 != null) itext(dyn0);
@@ -19984,15 +19985,6 @@ babelHelpers;
 		}
 
 		babelHelpers.createClass(Playground, [{
-			key: 'getAceMode',
-			value: function getAceMode(mode) {
-				if (mode === 'js') {
-					mode = 'javascript';
-				};
-
-				return 'ace/mode/' + mode;
-			}
-		}, {
 			key: 'renderSample',
 			value: function renderSample() {
 
@@ -20010,8 +20002,10 @@ babelHelpers;
 				if (index > -1) {
 					var sampleKey = this.sampleList.select.values[index];
 					var selectedSample = this.sampleList.items[sampleKey];
-					['css', 'html', 'js'].forEach(function (e) {
-						that.editor[e].setValue(selectedSample[e]);
+
+					Object.keys(that.editorModes).forEach(function (e) {
+						var text = selectedSample[e] ? selectedSample[e] : '';
+						that.editor[e].setValue(text);
 					});
 
 					this.renderSample();
@@ -20031,11 +20025,11 @@ babelHelpers;
 				this.sampleList = sampleList;
 				this.sampleList.select.on('stateChanged', sampleSelectedHandler);
 
-				['css', 'html', 'js'].forEach(function (e) {
+				Object.keys(this.editorModes).forEach(function (e) {
 					var tArea = that.element.querySelector('.metal-playground-' + e + '-content');
 					var editor = window.ace.edit(tArea);
 					editor.setTheme("ace/theme/monokai");
-					editor.getSession().setMode(that.getAceMode(e));
+					editor.getSession().setMode(that.editorModes[e]);
 
 					var renderSampleRunner = that.renderSample.bind(that);
 					editor.getSession().on('change', renderSampleRunner);
@@ -20066,7 +20060,8 @@ babelHelpers;
 		editor: { value: {} },
 		sampleRootUrl: {
 			value: 'https://raw.githubusercontent.com/peterborkuti/metal-playground-samples/master/'
-		}
+		},
+		editorModes: { value: { 'css': 'css', 'html': 'html', 'js': 'javascript', 'soy': 'soy_template' } }
 	};
 
 	this['metal']['Playground'] = Playground;

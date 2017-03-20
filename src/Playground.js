@@ -18,15 +18,6 @@ import IFrame from './IFrame';
  * Playground component.
  */
 class Playground extends Component {
-
-	getAceMode(mode) {
-		if (mode === 'js') {
-			mode = 'javascript'
-		};
-
-		return 'ace/mode/' + mode;
-	}
-
 	renderSample() {
 
 		var css = this.editor.css.getValue();
@@ -42,8 +33,10 @@ class Playground extends Component {
 		if (index > -1) {
 			var sampleKey = this.sampleList.select.values[index];
 			var selectedSample = this.sampleList.items[sampleKey];
-			['css', 'html', 'js'].forEach(function(e) {
-				that.editor[e].setValue(selectedSample[e]);
+
+			Object.keys(that.editorModes).forEach(function(e) {
+				var text = (selectedSample[e] ? selectedSample[e] : '');
+				that.editor[e].setValue(text);
 			});
 
 			this.renderSample();
@@ -62,12 +55,12 @@ class Playground extends Component {
 		this.sampleList = sampleList;
 		this.sampleList.select.on('stateChanged', sampleSelectedHandler);
 
-		['css', 'html', 'js'].forEach(function(e) {
+		Object.keys(this.editorModes).forEach(function(e) {
 			var tArea =
 				that.element.querySelector('.metal-playground-' + e + '-content');
 			var editor = window.ace.edit(tArea);
 			editor.setTheme("ace/theme/monokai");
-			editor.getSession().setMode(that.getAceMode(e));
+			editor.getSession().setMode(that.editorModes[e]);
 
 			var renderSampleRunner = that.renderSample.bind(that);
 			editor.getSession().on('change', renderSampleRunner);
@@ -76,7 +69,7 @@ class Playground extends Component {
 		});
 
 		this.iframe = new IFrame({
-			parentElement:this.element.querySelector('.metal-playground-result-content') 
+			parentElement:this.element.querySelector('.metal-playground-result-content')
 		});
 
 		var iFrameCreatorRunner = this.iframe.createIFrame.bind(this.iframe);
@@ -96,7 +89,8 @@ Playground.STATE = {
 	editor: { value: {} },
 	sampleRootUrl: {
 		value: 'https://raw.githubusercontent.com/peterborkuti/metal-playground-samples/master/'
-	}
+	},
+	editorModes : { value: {'css': 'css', 'html': 'html', 'js': 'javascript', 'soy': 'soy_template'}}
 };
 
 export default Playground;
