@@ -7,6 +7,8 @@ import Soy from 'metal-soy';
 import dom from 'metal-dom';
 import Ajax from 'metal-ajax';
 
+import Doctype from './Doctype';
+
 import Toggler from 'metal-toggler';
 import Select from 'metal-select';
 import Tooltip from 'metal-tooltip';
