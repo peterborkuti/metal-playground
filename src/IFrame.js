@@ -60,7 +60,7 @@ IFrame.STATE = {
 	metal_link: {
 		//value : 'https://metal.github.io/metal.js-standalone/bin/metal.bundle.js'
 		//value: 'https://code.jquery.com/jquery-3.1.1.min.js'
-		value : 'playground.js'
+		value : '../build/globals/playground.js'
 	},
 	bootstrap_link: {
 		value : 'bootstrap.min.css'

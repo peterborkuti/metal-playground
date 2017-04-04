@@ -11,6 +11,11 @@ import Toggler from 'metal-toggler';
 import Select from 'metal-select';
 import Tooltip from 'metal-tooltip';
 import Tabs from 'metal-tabs';
+import Alert from 'metal-alert';
+import Modal from 'metal-modal';
+import RP from 'metal-reading-progress';
+import List from 'metal-list';
+import Autocomplete from 'metal-autocomplete';
 
 import SampleList from './SampleList';
 import IFrame from './IFrame';
