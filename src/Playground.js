@@ -16,6 +16,9 @@ import Modal from 'metal-modal';
 import RP from 'metal-reading-progress';
 import List from 'metal-list';
 import Autocomplete from 'metal-autocomplete';
+import Slider from 'metal-slider';
+import Badges from 'metal-autocomplete-badges';
+
 
 import SampleList from './SampleList';
 import IFrame from './IFrame';
