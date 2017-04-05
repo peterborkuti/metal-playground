@@ -42,7 +42,8 @@
     "metal-modal": "^2.0.3",
     "metal-reading-progress": "^2.0.0",
     "metal-autocomplete": "^2.0.3",
-    "metal-alert": "^2.0.3"
+    "metal-alert": "^2.0.3",
+    "metal-components": "^2.3.3"
 
   },
   "devDependencies": {
