@@ -1146,187 +1146,376 @@ babelHelpers;
 
 (function () {
 	var getFunctionName = this['metalNamed']['metal']['getFunctionName'];
-	var isFunction = this['metalNamed']['metal']['isFunction'];
-	var isObject = this['metalNamed']['metal']['isObject'];
-	var isString = this['metalNamed']['metal']['isString'];
+	var isDefAndNotNull = this['metalNamed']['metal']['isDefAndNotNull'];
+
+
+	var ERROR_ARRAY_OF_TYPE = 'Expected an array of single type.';
+	var ERROR_OBJECT_OF_TYPE = 'Expected object of one type.';
+	var ERROR_ONE_OF = 'Expected one of given values.';
+	var ERROR_ONE_OF_TYPE = 'Expected one of given types.';
+	var ERROR_SHAPE_OF = 'Expected object with a specific shape.';
 
 	/**
-  * Adds the listeners specified in the given object.
-  * @param {!Component} component
-  * @param {Object} events
-  * @return {!Array<!EventHandle>} Handles from all subscribed events.
+  * Provides access to various type validators that will return an
+  * instance of Error when validation fails. Note that all type validators
+  * will also accept null or undefined values. To not accept these you should
+  * instead make your state property required.
   */
+	var validators = {
+		any: function any() {
+			return function () {
+				return true;
+			};
+		},
+		array: buildTypeValidator('array'),
+		bool: buildTypeValidator('boolean'),
+		func: buildTypeValidator('function'),
+		number: buildTypeValidator('number'),
+		object: buildTypeValidator('object'),
+		string: buildTypeValidator('string'),
 
-	function addListenersFromObj(component, events) {
-		var eventNames = Object.keys(events || {});
-		var handles = [];
-		for (var i = 0; i < eventNames.length; i++) {
-			var info = extractListenerInfo_(component, events[eventNames[i]]);
-			if (info.fn) {
-				var handle = void 0;
-				if (info.selector) {
-					handle = component.delegate(eventNames[i], info.selector, info.fn);
-				} else {
-					handle = component.on(eventNames[i], info.fn);
+		/**
+   * Creates a validator that checks that the value it receives is an array
+   * of items, and that all of the items pass the given validator.
+   * @param {!function()} validator Validator to check each item against.
+   * @return {!function()}
+   */
+		arrayOf: function arrayOf(validator) {
+			return maybe(function (value, name, context) {
+				var result = validators.array(value, name, context);
+				if (isInvalid(result)) {
+					return result;
 				}
-				handles.push(handle);
-			}
+				return validateArrayItems(validator, value, name, context);
+			});
+		},
+
+		/**
+   * Creates a validator that checks if a value is an instance of a given class.
+   * @param {!function()} expectedClass Class to check value against.
+   * @return {!function()}
+   */
+		instanceOf: function instanceOf(expectedClass) {
+			return maybe(function (value, name, context) {
+				if (value instanceof expectedClass) {
+					return true;
+				}
+				var msg = 'Expected instance of ' + expectedClass;
+				return composeError(msg, name, context);
+			});
+		},
+
+		/**
+   * Creates a validator that checks that the value it receives is an object,
+   * and that all values within that object pass the given validator.
+   * @param {!function()} validator Validator to check each object value against.
+   * @return {!function()}
+   */
+		objectOf: function objectOf(validator) {
+			return maybe(function (value, name, context) {
+				for (var key in value) {
+					if (isInvalid(validator(value[key]))) {
+						return composeError(ERROR_OBJECT_OF_TYPE, name, context);
+					}
+				}
+				return true;
+			});
+		},
+
+		/**
+   * Creates a validator that checks if the received value matches one of the
+   * given values.
+   * @param {!Array} arrayOfValues Array of values to check equality against.
+   * @return {!function()}
+   */
+		oneOf: function oneOf(arrayOfValues) {
+			return maybe(function (value, name, context) {
+				var result = validators.array(arrayOfValues, name, context);
+				if (isInvalid(result)) {
+					return result;
+				}
+				return arrayOfValues.indexOf(value) === -1 ? composeError(ERROR_ONE_OF, name, context) : true;
+			});
+		},
+
+		/**
+   * Creates a validator that checks if the received value matches one of the
+   * given types.
+   * @param {!Array} arrayOfTypeValidators Array of validators to check value
+   *     against.
+   * @return {!function()}
+   */
+		oneOfType: function oneOfType(arrayOfTypeValidators) {
+			return maybe(function (value, name, context) {
+				var result = validators.array(arrayOfTypeValidators, name, context);
+				if (isInvalid(result)) {
+					return result;
+				}
+
+				for (var i = 0; i < arrayOfTypeValidators.length; i++) {
+					if (!isInvalid(arrayOfTypeValidators[i](value, name, context))) {
+						return true;
+					}
+				}
+				return composeError(ERROR_ONE_OF_TYPE, name, context);
+			});
+		},
+
+		/**
+   * Creates a validator that checks if the received value is an object, and
+   * that its contents match the given shape.
+   * @param {!Object} shape An object containing validators for each key.
+   * @return {!function()}
+   */
+		shapeOf: function shapeOf(shape) {
+			return maybe(function (value, name, context) {
+				var result = validators.object(shape, name, context);
+				if (isInvalid(result)) {
+					return result;
+				}
+
+				for (var key in shape) {
+					var validator = shape[key];
+					var required = false;
+					if (validator.config) {
+						required = validator.config.required;
+						validator = validator.config.validator;
+					}
+					if (required && !isDefAndNotNull(value[key]) || isInvalid(validator(value[key]))) {
+						return composeError(ERROR_SHAPE_OF, name, context);
+					}
+				}
+				return true;
+			});
 		}
-		return handles;
-	}
+	};
 
-	this['metalNamed']['events'] = this['metalNamed']['events'] || {};
-	this['metalNamed']['events']['addListenersFromObj'] = addListenersFromObj; /**
-                                                                             * Extracts listener info from the given value.
-                                                                             * @param {!Component} component
-                                                                             * @param {!Component} component
-                                                                             * @param {function()|string|{selector:string,fn:function()|string}} value
-                                                                             * @return {!{selector:string,fn:function()}}
-                                                                             * @protected
-                                                                             */
-
-	function extractListenerInfo_(component, value) {
-		var info = {
-			fn: value
+	/**
+  * Creates a validator that checks against a specific primitive type.
+  * @param {string} expectedType Type to check against.
+  * @return {!function()} Function that runs the validator if called with
+  *     arguments, or just returns it otherwise. This means that when using a
+  *     type validator in `State` it may be just passed directly (like
+  *     `validators.bool`), or called with no args (like `validators.bool()`).
+  *     That's done to allow all validators to be used consistently, since some
+  *     (like `arrayOf`) always require that you call the function before
+  *     receiving the actual validator. Type validators don't need the call, but
+  *     work if it's made anyway.
+  */
+	function buildTypeValidator(expectedType) {
+		var validatorFn = maybe(validateType.bind(null, expectedType));
+		return function () {
+			if (arguments.length === 0) {
+				return validatorFn;
+			} else {
+				return validatorFn.apply(undefined, arguments);
+			}
 		};
-		if (isObject(value) && !isFunction(value)) {
-			info.selector = value.selector;
-			info.fn = value.fn;
-		}
-		if (isString(info.fn)) {
-			info.fn = getComponentFn(component, info.fn);
-		}
-		return info;
 	}
 
 	/**
-  * Gets the listener function from its name. Throws an error if none exist.
-  * @param {!Component} component
-  * @param {string} fnName
-  * @return {function()}
+  * Composes a warning a warning message.
+  * @param {string} error Error message to display to console.
+  * @param {?string} name Name of state property that is giving the error.
+  * @param {Object} context The property's owner.
+  * @return {!Error}
   */
-	function getComponentFn(component, fnName) {
-		if (isFunction(component[fnName])) {
-			return component[fnName].bind(component);
-		} else {
-			console.error('No function named ' + fnName + ' was found in the component\n\t\t\t"' + getFunctionName(component.constructor) + '". Make sure that you specify\n\t\t\tvalid function names when adding inline listeners');
-		}
+	function composeError(error, name, context) {
+		var compName = context ? getFunctionName(context.constructor) : null;
+		var renderer = context && context.getRenderer && context.getRenderer();
+		var parent = renderer && renderer.getParent && renderer.getParent();
+		var parentName = parent ? getFunctionName(parent.constructor) : null;
+		var location = parentName ? 'Check render method of \'' + parentName + '\'.' : '';
+		return new Error('Warning: Invalid state passed to \'' + name + '\'. ' + (error + ' Passed to \'' + compName + '\'. ' + location));
 	}
-	this['metalNamed']['events']['getComponentFn'] = getComponentFn;
+
+	/**
+  * Returns the type of the given value.
+  * @param {*} value Any value.
+  * @return {string} Type of value.
+  */
+	function getType(value) {
+		return Array.isArray(value) ? 'array' : typeof value === 'undefined' ? 'undefined' : babelHelpers.typeof(value);
+	}
+
+	/**
+  * Checks if the given validator result says that the value is invalid.
+  * @param {boolean|!Error} result
+  * @return {boolean}
+  */
+	function isInvalid(result) {
+		return result instanceof Error;
+	}
+
+	/**
+  * Wraps the given validator so that it also accepts null/undefined values.
+  *   a validator that checks a value against a single type, null, or
+  * undefined.
+  * @param {!function()} typeValidator Validator to wrap.
+  * @return {!function()} Wrapped validator.
+  */
+	function maybe(typeValidator) {
+		return function (value, name, context) {
+			return isDefAndNotNull(value) ? typeValidator(value, name, context) : true;
+		};
+	}
+
+	/**
+  * Checks if all the items of the given array pass the given validator.
+  * @param {!function()} validator
+  * @param {*} value The array to validate items for.
+  * @param {string} name The name of the array property being checked.
+  * @param {!Object} context Owner of the array property being checked.
+  * @return {!Error|boolean} `true` if the type matches, or an error otherwise.
+  */
+	function validateArrayItems(validator, value, name, context) {
+		for (var i = 0; i < value.length; i++) {
+			if (isInvalid(validator(value[i], name, context))) {
+				return composeError(ERROR_ARRAY_OF_TYPE, name, context);
+			}
+		}
+		return true;
+	}
+
+	/**
+  * Checks if the given value matches the expected type.
+  * @param {string} expectedType String representing the expected type.
+  * @param {*} value The value to match the type of.
+  * @param {string} name The name of the property being checked.
+  * @param {!Object} context Owner of the property being checked.
+  * @return {!Error|boolean} `true` if the type matches, or an error otherwise.
+  */
+	function validateType(expectedType, value, name, context) {
+		var type = getType(value);
+		if (type !== expectedType) {
+			var msg = 'Expected type \'' + expectedType + '\', but received type \'' + type + '\'.';
+			return composeError(msg, name, context);
+		}
+		return true;
+	}
+
+	this['metal']['validators'] = validators;
 }).call(this);
 'use strict';
 
 (function () {
-	var isFunction = this['metalNamed']['metal']['isFunction'];
-
-
-	var SYNC_FNS_KEY = '__METAL_SYNC_FNS__';
+	var object = this['metalNamed']['metal']['object'];
+	var validators = this['metal']['validators'];
 
 	/**
-  * Gets the `sync` methods for this component's state. Caches the results in
-  * the component's constructor whenever possible, so that this doesn't need to
-  * be calculated again. It's not possible to cache the results when at least
-  * one sync method is defined in the instance itself instead of in its
-  * prototype, as it may be bound to the instance (not reusable by others).
-  * @param {!Component} component
-  * @return {!Object}
-  * @private
+  * Sugar api that can be used as an alternative for manually building `State`
+  * configuration in the expected format. For example, instead of having
+  * something like this:
+  *
+  * ```js
+  * MyClass.STATE = {
+  *   foo: {
+  *     required: true,
+  *     validator: validators.number,
+  *     value: 13
+  *   }
+  * };
+  * ```
+  *
+  * You could instead do:
+  *
+  * ```js
+  * MyClass.STATE = {
+  *   foo: Config.required().number().value(13)
+  * };
+  * ```
   */
-	function getSyncFns_(component) {
-		var ctor = component.constructor;
-		if (ctor.hasOwnProperty(SYNC_FNS_KEY)) {
-			return ctor[SYNC_FNS_KEY];
-		}
 
-		var fns = {};
-		var keys = component.getDataManager().getSyncKeys(component);
-		var canCache = true;
-		for (var i = 0; i < keys.length; i++) {
-			var name = 'sync' + keys[i].charAt(0).toUpperCase() + keys[i].slice(1);
-			var fn = component[name];
-			if (fn) {
-				fns[keys[i]] = fn;
-				canCache = canCache && component.constructor.prototype[name];
-			}
-		}
+	var Config = {
+		/**
+   * Adds the `internal` flag to the `State` configuration.
+   * @param {boolean} required Flag to set "internal" to. True by default.
+   * @return {!Object} `State` configuration object.
+   */
+		internal: function internal() {
+			var _internal = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : true;
 
-		if (canCache) {
-			ctor[SYNC_FNS_KEY] = fns;
+			return mergeConfig(this, {
+				internal: _internal
+			});
+		},
+
+
+		/**
+   * Adds the `required` flag to the `State` configuration.
+   * @param {boolean} required Flag to set "required" to. True by default.
+   * @return {!Object} `State` configuration object.
+   */
+		required: function required() {
+			var _required = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : true;
+
+			return mergeConfig(this, {
+				required: _required
+			});
+		},
+
+
+		/**
+   * Adds a setter to the `State` configuration.
+   * @param {!function()} setter
+   * @return {!Object} `State` configuration object.
+   */
+		setter: function setter(_setter) {
+			return mergeConfig(this, {
+				setter: _setter
+			});
+		},
+
+
+		/**
+   * Adds a validator to the `State` configuration.
+   * @param {!function()} validator
+   * @return {!Object} `State` configuration object.
+   */
+		validator: function validator(_validator) {
+			return mergeConfig(this, {
+				validator: _validator
+			});
+		},
+
+
+		/**
+   * Adds a default value to the `State` configuration.
+   * @param {*} value
+   * @return {!Object} `State` configuration object.
+   */
+		value: function value(_value) {
+			return mergeConfig(this, {
+				value: _value
+			});
 		}
-		return fns;
-	}
+	};
 
 	/**
-  * Calls "sync" functions for the given component's state.
-  * @param {!Component} component
-  * @param {Object=} opt_changes When given, only the properties inside it will
-  *     be synced. Otherwise all state properties will be synced.
+  * Merges the given config object into the one that has been built so far.
+  * @param {!Object} context The object calling this function.
+  * @param {!Object} config The object to merge to the built config.
+  * @return {!Object} The final object containing the built config.
   */
-	function syncState(component, opt_changes) {
-		var syncFns = getSyncFns_(component);
-		var keys = Object.keys(opt_changes || syncFns);
-		for (var i = 0; i < keys.length; i++) {
-			var fn = syncFns[keys[i]];
-			if (isFunction(fn)) {
-				var change = opt_changes && opt_changes[keys[i]];
-				var manager = component.getDataManager();
-				fn.call(component, change ? change.newVal : manager.get(component, keys[i]), change ? change.prevVal : undefined);
-			}
+	function mergeConfig(context, config) {
+		var obj = context;
+		if (obj === Config) {
+			obj = Object.create(Config);
+			obj.config = {};
 		}
+		object.mixin(obj.config, config);
+		return obj;
 	}
-	this['metalNamed']['sync'] = this['metalNamed']['sync'] || {};
-	this['metalNamed']['sync']['syncState'] = syncState;
-}).call(this);
-'use strict';
 
-(function () {
-	var METAL_DATA = '__metal_data__';
+	// Add all validators to `Config`.
+	var fnNames = Object.keys(validators);
+	fnNames.forEach(function (name) {
+		return Config[name] = function () {
+			return this.validator(validators[name]);
+		};
+	});
 
-	var domData = function () {
-		function domData() {
-			babelHelpers.classCallCheck(this, domData);
-		}
-
-		babelHelpers.createClass(domData, null, [{
-			key: 'get',
-
-			/**
-    * Gets Metal.js's data for the given element.
-    * @param {!Element} element
-    * @param {string=} opt_name Optional property from the data to be returned.
-    * @param {*} opt_initialVal Optinal value to the set the requested property
-    *     to if it doesn't exist yet in the data.
-    * @return {!Object}
-    */
-			value: function get(element, opt_name, opt_initialVal) {
-				if (!element[METAL_DATA]) {
-					element[METAL_DATA] = {};
-				}
-				if (!opt_name) {
-					return element[METAL_DATA];
-				}
-				if (!element[METAL_DATA][opt_name] && opt_initialVal) {
-					element[METAL_DATA][opt_name] = opt_initialVal;
-				}
-				return element[METAL_DATA][opt_name];
-			}
-
-			/**
-    * Checks if the given element has data stored in it.
-    * @param {!Element} element
-    * @return {boolean}
-    */
-
-		}, {
-			key: 'has',
-			value: function has(element) {
-				return !!element[METAL_DATA];
-			}
-		}]);
-		return domData;
-	}();
-
-	this['metal']['domData'] = domData;
+	this['metal']['Config'] = Config;
 }).call(this);
 'use strict';
 
@@ -2246,6 +2435,1100 @@ babelHelpers;
   this['metalNamed']['events']['EventEmitterProxy'] = EventEmitterProxy;
   this['metalNamed']['events']['EventHandle'] = EventHandle;
   this['metalNamed']['events']['EventHandler'] = EventHandler;
+}).call(this);
+'use strict';
+
+(function () {
+	var async = this['metalNamed']['metal']['async'];
+	var getStaticProperty = this['metalNamed']['metal']['getStaticProperty'];
+	var isDefAndNotNull = this['metalNamed']['metal']['isDefAndNotNull'];
+	var isFunction = this['metalNamed']['metal']['isFunction'];
+	var isObject = this['metalNamed']['metal']['isObject'];
+	var isString = this['metalNamed']['metal']['isString'];
+	var object = this['metalNamed']['metal']['object'];
+	var EventEmitter = this['metalNamed']['events']['EventEmitter'];
+
+	/**
+  * State adds support for having object properties that can be watched for
+  * changes, as well as configured with validators, setters and other options.
+  * See the `configState` method for a complete list of available configuration
+  * options for each state key.
+  * @extends {EventEmitter}
+  */
+
+	var State = function (_EventEmitter) {
+		babelHelpers.inherits(State, _EventEmitter);
+
+		/**
+   * Constructor function for `State`.
+   * @param {Object=} opt_config Optional config object with initial values to
+   *     set state properties to.
+   * @param {Object=} opt_obj Optional object that should hold the state
+   *     properties. If none is given, they will be added directly to `this`
+   *     instead.
+   * @param {Object=} opt_context Optional context to call functions (like
+   *     validators and setters) on. Defaults to `this`.
+   */
+		function State(opt_config, opt_obj, opt_context) {
+			babelHelpers.classCallCheck(this, State);
+
+			/**
+    * Context to call functions (like validators and setters) on.
+    * @type {!Object}
+    * @protected
+    */
+			var _this = babelHelpers.possibleConstructorReturn(this, (State.__proto__ || Object.getPrototypeOf(State)).call(this));
+
+			_this.context_ = opt_context || _this;
+
+			/**
+    * Map of keys that can not be used as state keys.
+    * @type {Object<string, boolean>}
+    * @protected
+    */
+			_this.keysBlacklist_ = null;
+
+			/**
+    * Object that should hold the state properties.
+    * @type {!Object}
+    * @protected
+    */
+			_this.obj_ = opt_obj || _this;
+
+			_this.eventData_ = null;
+
+			/**
+    * Object with information about the batch event that is currently
+    * scheduled, or null if none is.
+    * @type {Object}
+    * @protected
+    */
+			_this.scheduledBatchData_ = null;
+
+			/**
+    * Object that contains information about all this instance's state keys.
+    * @type {!Object<string, !Object>}
+    * @protected
+    */
+			_this.stateInfo_ = {};
+
+			_this.stateConfigs_ = {};
+
+			_this.initialValues_ = object.mixin({}, opt_config);
+
+			_this.setShouldUseFacade(true);
+			_this.configStateFromStaticHint_();
+
+			Object.defineProperty(_this.obj_, State.STATE_REF_KEY, {
+				configurable: true,
+				enumerable: false,
+				value: _this
+			});
+			return _this;
+		}
+
+		/**
+   * Logs an error if the given property is required but wasn't given.
+   * @param {string} name
+   * @protected
+   */
+
+
+		babelHelpers.createClass(State, [{
+			key: 'assertGivenIfRequired_',
+			value: function assertGivenIfRequired_(name) {
+				var config = this.stateConfigs_[name];
+				if (config.required) {
+					var info = this.getStateInfo(name);
+					var value = info.state === State.KeyStates.INITIALIZED ? this.get(name) : this.initialValues_[name];
+					if (!isDefAndNotNull(value)) {
+						var errorMessage = 'The property called "' + name + '" is required but didn\'t receive a value.';
+						if (this.shouldThrowValidationError()) {
+							throw new Error(errorMessage);
+						} else {
+							console.error(errorMessage);
+						}
+					}
+				}
+			}
+
+			/**
+    * Logs an error if the `validatorReturn` is instance of `Error`.
+    * @param {*} validatorReturn
+    * @protected
+    */
+
+		}, {
+			key: 'assertValidatorReturnInstanceOfError_',
+			value: function assertValidatorReturnInstanceOfError_(validatorReturn) {
+				if (validatorReturn instanceof Error) {
+					if (this.shouldThrowValidationError()) {
+						throw validatorReturn;
+					} else {
+						console.error('Warning: ' + validatorReturn);
+					}
+				}
+			}
+
+			/**
+    * Checks that the given name is a valid state key name. If it's not, an error
+    * will be thrown.
+    * @param {string} name The name to be validated.
+    * @throws {Error}
+    * @protected
+    */
+
+		}, {
+			key: 'assertValidStateKeyName_',
+			value: function assertValidStateKeyName_(name) {
+				if (this.keysBlacklist_ && this.keysBlacklist_[name]) {
+					throw new Error('It\'s not allowed to create a state key with the name "' + name + '".');
+				}
+			}
+
+			/**
+    * Builds the property definition object for the specified state key.
+    * @param {string} name The name of the key.
+    * @return {!Object}
+    * @protected
+    */
+
+		}, {
+			key: 'buildKeyPropertyDef_',
+			value: function buildKeyPropertyDef_(name) {
+				return {
+					configurable: true,
+					enumerable: true,
+					get: function get() {
+						return this[State.STATE_REF_KEY].getStateKeyValue_(name);
+					},
+					set: function set(val) {
+						this[State.STATE_REF_KEY].setStateKeyValue_(name, val);
+					}
+				};
+			}
+
+			/**
+    * Calls the requested function, running the appropriate code for when it's
+    * passed as an actual function object or just the function's name.
+    * @param {!Function|string} fn Function, or name of the function to run.
+    * @param {!Array} An optional array of parameters to be passed to the
+    *   function that will be called.
+    * @return {*} The return value of the called function.
+    * @protected
+    */
+
+		}, {
+			key: 'callFunction_',
+			value: function callFunction_(fn, args) {
+				if (isString(fn)) {
+					return this.context_[fn].apply(this.context_, args);
+				} else if (isFunction(fn)) {
+					return fn.apply(this.context_, args);
+				}
+			}
+
+			/**
+    * Calls the state key's setter, if there is one.
+    * @param {string} name The name of the key.
+    * @param {*} value The value to be set.
+    * @param {*} currentValue The current value.
+    * @return {*} The final value to be set.
+    * @protected
+    */
+
+		}, {
+			key: 'callSetter_',
+			value: function callSetter_(name, value, currentValue) {
+				var config = this.stateConfigs_[name];
+				if (config.setter) {
+					value = this.callFunction_(config.setter, [value, currentValue]);
+				}
+				return value;
+			}
+
+			/**
+    * Calls the state key's validator, if there is one. Emits console
+    * warning if validator returns a string.
+    * @param {string} name The name of the key.
+    * @param {*} value The value to be validated.
+    * @return {boolean} Flag indicating if value is valid or not.
+    * @protected
+    */
+
+		}, {
+			key: 'callValidator_',
+			value: function callValidator_(name, value) {
+				var config = this.stateConfigs_[name];
+				if (config.validator) {
+					var validatorReturn = this.callFunction_(config.validator, [value, name, this.context_]);
+					this.assertValidatorReturnInstanceOfError_(validatorReturn);
+					return validatorReturn;
+				}
+				return true;
+			}
+
+			/**
+    * Checks if the it's allowed to write on the requested state key.
+    * @param {string} name The name of the key.
+    * @return {boolean}
+    */
+
+		}, {
+			key: 'canSetState',
+			value: function canSetState(name) {
+				var info = this.getStateInfo(name);
+				return !this.stateConfigs_[name].writeOnce || !info.written;
+			}
+
+			/**
+    * Adds the given key(s) to the state, together with its(their) configs.
+    * Config objects support the given settings:
+    *     required - When set to `true`, causes errors to be printed (via
+    *     `console.error`) if no value is given for the property.
+    *
+    *     setter - Function for normalizing state key values. It receives the new
+    *     value that was set, and returns the value that should be stored.
+    *
+    *     validator - Function that validates state key values. When it returns
+    *     false, the new value is ignored. When it returns an instance of Error,
+    *     it will emit the error to the console.
+    *
+    *     value - The default value for the state key. Note that setting this to
+    *     an object will cause all class instances to use the same reference to
+    *     the object. To have each instance use a different reference for objects,
+    *     use the `valueFn` option instead.
+    *
+    *     valueFn - A function that returns the default value for a state key.
+    *
+    *     writeOnce - Ignores writes to the state key after it's been first
+    *     written to. That is, allows writes only when setting the value for the
+    *     first time.
+    * @param {!Object.<string, !Object>|string} configs An object that maps
+    *     configuration options for keys to be added to the state.
+    * @param {boolean|Object|*=} opt_context The context where the added state
+    *     keys will be defined (defaults to `this`), or false if they shouldn't
+    *     be defined at all.
+    */
+
+		}, {
+			key: 'configState',
+			value: function configState(configs, opt_context) {
+				var names = Object.keys(configs);
+				if (names.length === 0) {
+					return;
+				}
+
+				if (opt_context !== false) {
+					var props = {};
+					for (var i = 0; i < names.length; i++) {
+						var name = names[i];
+						this.assertValidStateKeyName_(name);
+						props[name] = this.buildKeyPropertyDef_(name);
+					}
+					Object.defineProperties(opt_context || this.obj_, props);
+				}
+
+				this.stateConfigs_ = configs;
+				for (var _i = 0; _i < names.length; _i++) {
+					var _name = names[_i];
+					configs[_name] = configs[_name].config ? configs[_name].config : configs[_name];
+					this.assertGivenIfRequired_(names[_i]);
+					this.validateInitialValue_(names[_i]);
+				}
+			}
+
+			/**
+    * Adds state keys from super classes static hint `MyClass.STATE = {};`.
+    * @param {Object.<string, !Object>=} opt_config An object that maps all the
+    *     configurations for state keys.
+    * @protected
+    */
+
+		}, {
+			key: 'configStateFromStaticHint_',
+			value: function configStateFromStaticHint_() {
+				var ctor = this.constructor;
+				if (ctor !== State) {
+					var defineContext = void 0;
+					if (this.obj_ === this) {
+						defineContext = ctor.hasConfiguredState_ ? false : ctor.prototype;
+						ctor.hasConfiguredState_ = true;
+					}
+					this.configState(State.getStateStatic(ctor), defineContext);
+				}
+			}
+
+			/**
+    * @inheritDoc
+    */
+
+		}, {
+			key: 'disposeInternal',
+			value: function disposeInternal() {
+				babelHelpers.get(State.prototype.__proto__ || Object.getPrototypeOf(State.prototype), 'disposeInternal', this).call(this);
+				this.initialValues_ = null;
+				this.stateInfo_ = null;
+				this.stateConfigs_ = null;
+				this.scheduledBatchData_ = null;
+			}
+
+			/**
+    * Emits the state change batch event.
+    * @protected
+    */
+
+		}, {
+			key: 'emitBatchEvent_',
+			value: function emitBatchEvent_() {
+				if (!this.isDisposed()) {
+					var data = this.scheduledBatchData_;
+					this.scheduledBatchData_ = null;
+					this.context_.emit('stateChanged', data);
+				}
+			}
+
+			/**
+    * Returns the value of the requested state key.
+    * Note: this can and should be accomplished by accessing the value as a
+    * regular property. This should only be used in cases where a function is
+    * actually needed.
+    * @param {string} name
+    * @return {*}
+    */
+
+		}, {
+			key: 'get',
+			value: function get(name) {
+				return this.obj_[name];
+			}
+
+			/**
+    * Returns an object that maps state keys to their values.
+    * @param {Array<string>=} opt_names A list of names of the keys that should
+    *   be returned. If none is given, the whole state will be returned.
+    * @return {Object.<string, *>}
+    */
+
+		}, {
+			key: 'getState',
+			value: function getState(opt_names) {
+				var state = {};
+				var names = opt_names || this.getStateKeys();
+
+				for (var i = 0; i < names.length; i++) {
+					state[names[i]] = this.get(names[i]);
+				}
+
+				return state;
+			}
+
+			/**
+    * Gets information about the specified state property.
+    * @param {string} name
+    * @return {!Object}
+    */
+
+		}, {
+			key: 'getStateInfo',
+			value: function getStateInfo(name) {
+				if (!this.stateInfo_[name]) {
+					this.stateInfo_[name] = {};
+				}
+				return this.stateInfo_[name];
+			}
+
+			/**
+    * Gets the config object for the requested state key.
+    * @param {string} name The key's name.
+    * @return {Object}
+    * @protected
+    */
+
+		}, {
+			key: 'getStateKeyConfig',
+			value: function getStateKeyConfig(name) {
+				return this.stateConfigs_ ? this.stateConfigs_[name] : null;
+			}
+
+			/**
+    * Returns an array with all state keys.
+    * @return {!Array.<string>}
+    */
+
+		}, {
+			key: 'getStateKeys',
+			value: function getStateKeys() {
+				return this.stateConfigs_ ? Object.keys(this.stateConfigs_) : [];
+			}
+
+			/**
+    * Gets the value of the specified state key. This is passed as that key's
+    * getter to the `Object.defineProperty` call inside the `addKeyToState` method.
+    * @param {string} name The name of the key.
+    * @return {*}
+    * @protected
+    */
+
+		}, {
+			key: 'getStateKeyValue_',
+			value: function getStateKeyValue_(name) {
+				if (!this.warnIfDisposed_(name)) {
+					this.initStateKey_(name);
+					return this.getStateInfo(name).value;
+				}
+			}
+
+			/**
+    * Merges the STATE static variable for the given constructor function.
+    * @param  {!Function} ctor Constructor function.
+    * @return {boolean} Returns true if merge happens, false otherwise.
+    * @static
+    */
+
+		}, {
+			key: 'hasBeenSet',
+
+
+			/**
+    * Checks if the value of the state key with the given name has already been
+    * set. Note that this doesn't run the key's getter.
+    * @param {string} name The name of the key.
+    * @return {boolean}
+    */
+			value: function hasBeenSet(name) {
+				var info = this.getStateInfo(name);
+				return info.state === State.KeyStates.INITIALIZED || this.hasInitialValue_(name);
+			}
+
+			/**
+    * Checks if an initial value was given to the specified state property.
+    * @param {string} name The name of the key.
+    * @return {boolean}
+    * @protected
+    */
+
+		}, {
+			key: 'hasInitialValue_',
+			value: function hasInitialValue_(name) {
+				return this.initialValues_.hasOwnProperty(name);
+			}
+
+			/**
+    * Checks if the given key is present in this instance's state.
+    * @param {string} key
+    * @return {boolean}
+    */
+
+		}, {
+			key: 'hasStateKey',
+			value: function hasStateKey(key) {
+				if (!this.warnIfDisposed_(key)) {
+					return !!this.stateConfigs_[key];
+				}
+			}
+
+			/**
+    * Informs of changes to a state key's value through an event. Won't trigger
+    * the event if the value hasn't changed or if it's being initialized.
+    * @param {string} name The name of the key.
+    * @param {*} prevVal The previous value of the key.
+    * @protected
+    */
+
+		}, {
+			key: 'informChange_',
+			value: function informChange_(name, prevVal) {
+				if (this.shouldInformChange_(name, prevVal)) {
+					var data = object.mixin({
+						key: name,
+						newVal: this.get(name),
+						prevVal: prevVal
+					}, this.eventData_);
+					this.context_.emit(name + 'Changed', data);
+					this.context_.emit('stateKeyChanged', data);
+					this.scheduleBatchEvent_(data);
+				}
+			}
+
+			/**
+    * Initializes the specified state key, giving it a first value.
+    * @param {string} name The name of the key.
+    * @protected
+    */
+
+		}, {
+			key: 'initStateKey_',
+			value: function initStateKey_(name) {
+				var info = this.getStateInfo(name);
+				if (info.state !== State.KeyStates.UNINITIALIZED) {
+					return;
+				}
+
+				info.state = State.KeyStates.INITIALIZING;
+				this.setInitialValue_(name);
+				if (!info.written) {
+					this.setDefaultValue(name);
+				}
+				info.state = State.KeyStates.INITIALIZED;
+			}
+
+			/**
+    * Merges two values for the STATE property into a single object.
+    * @param {Object} mergedVal
+    * @param {Object} currVal
+    * @return {!Object} The merged value.
+    * @static
+    */
+
+		}, {
+			key: 'removeStateKey',
+
+
+			/**
+    * Removes the requested state key.
+    * @param {string} name The name of the key.
+    */
+			value: function removeStateKey(name) {
+				this.stateInfo_[name] = null;
+				this.stateConfigs_[name] = null;
+				delete this.obj_[name];
+			}
+
+			/**
+    * Schedules a state change batch event to be emitted asynchronously.
+    * @param {!Object} changeData Information about a state key's update.
+    * @protected
+    */
+
+		}, {
+			key: 'scheduleBatchEvent_',
+			value: function scheduleBatchEvent_(changeData) {
+				if (!this.scheduledBatchData_) {
+					async.nextTick(this.emitBatchEvent_, this);
+					this.scheduledBatchData_ = object.mixin({
+						changes: {}
+					}, this.eventData_);
+				}
+
+				var name = changeData.key;
+				var changes = this.scheduledBatchData_.changes;
+				if (changes[name]) {
+					changes[name].newVal = changeData.newVal;
+				} else {
+					changes[name] = changeData;
+				}
+			}
+
+			/**
+    * Sets the value of the requested state key.
+    * Note: this can and should be accomplished by setting the state key as a
+    * regular property. This should only be used in cases where a function is
+    * actually needed.
+    * @param {string} name
+    * @param {*} value
+    * @return {*}
+    */
+
+		}, {
+			key: 'set',
+			value: function set(name, value) {
+				if (this.hasStateKey(name)) {
+					this.obj_[name] = value;
+				}
+			}
+
+			/**
+    * Sets the default value of the requested state key.
+    * @param {string} name The name of the key.
+    * @return {*}
+    */
+
+		}, {
+			key: 'setDefaultValue',
+			value: function setDefaultValue(name) {
+				var config = this.stateConfigs_[name];
+
+				if (config.value !== undefined) {
+					this.set(name, config.value);
+				} else {
+					this.set(name, this.callFunction_(config.valueFn));
+				}
+			}
+
+			/**
+    * Sets data to be sent with all events emitted from this instance.
+    * @param {Object}
+    */
+
+		}, {
+			key: 'setEventData',
+			value: function setEventData(data) {
+				this.eventData_ = data;
+			}
+
+			/**
+    * Sets the initial value of the requested state key.
+    * @param {string} name The name of the key.
+    * @return {*}
+    * @protected
+    */
+
+		}, {
+			key: 'setInitialValue_',
+			value: function setInitialValue_(name) {
+				if (this.hasInitialValue_(name)) {
+					this.set(name, this.initialValues_[name]);
+					this.initialValues_[name] = undefined;
+				}
+			}
+
+			/**
+    * Sets a map of keys that are not valid state keys.
+    * @param {!Object<string, boolean>}
+    */
+
+		}, {
+			key: 'setKeysBlacklist',
+			value: function setKeysBlacklist(blacklist) {
+				this.keysBlacklist_ = blacklist;
+			}
+
+			/**
+    * Sets the value of all the specified state keys.
+    * @param {!Object.<string,*>} values A map of state keys to the values they
+    *   should be set to.
+    * @param {function()=} opt_callback An optional function that will be run
+    *   after the next batched update is triggered.
+    */
+
+		}, {
+			key: 'setState',
+			value: function setState(values, opt_callback) {
+				var _this2 = this;
+
+				Object.keys(values).forEach(function (name) {
+					return _this2.set(name, values[name]);
+				});
+				if (opt_callback && this.scheduledBatchData_) {
+					this.context_.once('stateChanged', opt_callback);
+				}
+			}
+
+			/**
+    * Sets the value of the specified state key. This is passed as that key's
+    * setter to the `Object.defineProperty` call inside the `addKeyToState`
+    * method.
+    * @param {string} name The name of the key.
+    * @param {*} value The new value of the key.
+    * @protected
+    */
+
+		}, {
+			key: 'setStateKeyValue_',
+			value: function setStateKeyValue_(name, value) {
+				if (this.warnIfDisposed_(name) || !this.canSetState(name) || !this.validateKeyValue_(name, value)) {
+					return;
+				}
+
+				var prevVal = this.get(name);
+				var info = this.getStateInfo(name);
+				info.value = this.callSetter_(name, value, prevVal);
+				this.assertGivenIfRequired_(name);
+				info.written = true;
+				this.informChange_(name, prevVal);
+			}
+
+			/**
+    * Checks if we should inform about a state update. Updates are ignored during
+    * state initialization. Otherwise, updates to primitive values are only
+    * informed when the new value is different from the previous one. Updates to
+    * objects (which includes functions and arrays) are always informed outside
+    * initialization though, since we can't be sure if all of the internal data
+    * has stayed the same.
+    * @param {string} name The name of the key.
+    * @param {*} prevVal The previous value of the key.
+    * @return {boolean}
+    * @protected
+    */
+
+		}, {
+			key: 'shouldInformChange_',
+			value: function shouldInformChange_(name, prevVal) {
+				var info = this.getStateInfo(name);
+				return info.state === State.KeyStates.INITIALIZED && (isObject(prevVal) || prevVal !== this.get(name));
+			}
+
+			/**
+    * Returns a boolean that determines whether or not should throw error when
+    * vaildator functions returns an `Error` instance.
+    * @return {boolean} By default returns false.
+    */
+
+		}, {
+			key: 'shouldThrowValidationError',
+			value: function shouldThrowValidationError() {
+				return false;
+			}
+
+			/**
+    * Validates the initial value for the state property with the given name.
+    * @param {string} name
+    * @protected
+    */
+
+		}, {
+			key: 'validateInitialValue_',
+			value: function validateInitialValue_(name) {
+				if (this.hasInitialValue_(name) && !this.callValidator_(name, this.initialValues_[name])) {
+					delete this.initialValues_[name];
+				}
+			}
+
+			/**
+    * Validates the state key's value, which includes calling the validator
+    * defined in the key's configuration object, if there is one.
+    * @param {string} name The name of the key.
+    * @param {*} value The value to be validated.
+    * @return {boolean} Flag indicating if value is valid or not.
+    * @protected
+    */
+
+		}, {
+			key: 'validateKeyValue_',
+			value: function validateKeyValue_(name, value) {
+				var info = this.getStateInfo(name);
+				return info.state === State.KeyStates.INITIALIZING || this.callValidator_(name, value);
+			}
+
+			/**
+    * Warns if this instance has already been disposed.
+    * @param {string} name Name of the property to be accessed if not disposed.
+    * @return {boolean} True if disposed, or false otherwise.
+    * @protected
+    */
+
+		}, {
+			key: 'warnIfDisposed_',
+			value: function warnIfDisposed_(name) {
+				var disposed = this.isDisposed();
+				if (disposed) {
+					console.warn('Error. Trying to access property "' + name + '" on disposed instance');
+				}
+				return disposed;
+			}
+		}], [{
+			key: 'getStateStatic',
+			value: function getStateStatic(ctor) {
+				return getStaticProperty(ctor, 'STATE', State.mergeState);
+			}
+		}, {
+			key: 'mergeState',
+			value: function mergeState(mergedVal, currVal) {
+				return object.mixin({}, currVal, mergedVal);
+			}
+		}]);
+		return State;
+	}(EventEmitter);
+
+	State.STATE_REF_KEY = '__METAL_STATE_REF_KEY__';
+
+	/**
+  * Constants that represent the states that a state key can be in.
+  * @type {!Object}
+  */
+	State.KeyStates = {
+		UNINITIALIZED: undefined,
+		INITIALIZING: 1,
+		INITIALIZED: 2
+	};
+
+	this['metal']['State'] = State;
+}).call(this);
+'use strict';
+
+(function () {
+  var validators = this['metal']['validators'];
+  var Config = this['metal']['Config'];
+  var State = this['metal']['State'];
+  this['metal']['state'] = State;
+  this['metalNamed']['state'] = this['metalNamed']['state'] || {};
+  this['metalNamed']['state']['validators'] = validators;
+  this['metalNamed']['state']['Config'] = Config;
+  this['metalNamed']['state']['State'] = State;
+}).call(this);
+'use strict';
+
+(function () {
+	var State = this['metal']['state'];
+
+	var IFrame = function (_State) {
+		babelHelpers.inherits(IFrame, _State);
+
+		function IFrame() {
+			babelHelpers.classCallCheck(this, IFrame);
+			return babelHelpers.possibleConstructorReturn(this, (IFrame.__proto__ || Object.getPrototypeOf(IFrame)).apply(this, arguments));
+		}
+
+		babelHelpers.createClass(IFrame, [{
+			key: 'loadMetal',
+			value: function loadMetal() {
+				var that = this;
+				Ajax.request(this.metal_link, 'GET').then(function (xhr) {
+					that.metalSource = xhr.responseText;
+				});
+			}
+		}, {
+			key: 'createIFrame',
+			value: function createIFrame() {
+				// create the iframe and attach it to the document
+				var iframe = document.createElement("iframe");
+				try {
+					this.parentElement.removeChild(this.iframe);
+				} catch (err) {};
+				iframe = this.parentElement.appendChild(iframe);
+
+				// find the iframe's document and write some content
+				var idocument = iframe.contentDocument || iframe.contentWindow.document;
+
+				idocument.open();
+				idocument.write("<!DOCTYPE html>");
+				idocument.write("<html>");
+				idocument.write("<head>");
+				idocument.write('<link rel="stylesheet" href="' + this.bootstrap_link + '">');
+				idocument.write('<script src="' + this.metal_link + '"></script>');
+				idocument.write("<style>");
+				idocument.write(this.css);
+				idocument.write("</style>");
+				idocument.write("</head>");
+				idocument.write("<body>");
+				idocument.write(this.html);
+				idocument.write("<script>");
+				idocument.write(this.js);
+				idocument.write("</script>");
+				idocument.write("</body>");
+				idocument.write("</html>");
+				idocument.close();
+
+				this.iframe = iframe;
+				this.idocument = idocument;
+			}
+		}, {
+			key: 'setContent',
+			value: function setContent(css, js, html) {
+				if (css !== this.css || js !== this.js || html != this.html) {
+					this.css = css;
+					this.js = js;
+					this.html = html;
+					this.createIFrame();
+				}
+			}
+		}]);
+		return IFrame;
+	}(State);
+
+	IFrame.STATE = {
+		metal_link: {
+			//value : 'https://metal.github.io/metal.js-standalone/bin/metal.bundle.js'
+			//value: 'https://code.jquery.com/jquery-3.1.1.min.js'
+			value: '../build/globals/playground.js'
+		},
+		bootstrap_link: {
+			value: 'bootstrap.min.css'
+		},
+		iframe: { value: {} },
+		idocument: { value: {} },
+		metalSource: { value: '' },
+		parentElement: { value: {} }
+	};
+
+	this['metal']['IFrame'] = IFrame;
+}).call(this);
+'use strict';
+
+(function () {
+	var getFunctionName = this['metalNamed']['metal']['getFunctionName'];
+	var isFunction = this['metalNamed']['metal']['isFunction'];
+	var isObject = this['metalNamed']['metal']['isObject'];
+	var isString = this['metalNamed']['metal']['isString'];
+
+	/**
+  * Adds the listeners specified in the given object.
+  * @param {!Component} component
+  * @param {Object} events
+  * @return {!Array<!EventHandle>} Handles from all subscribed events.
+  */
+
+	function addListenersFromObj(component, events) {
+		var eventNames = Object.keys(events || {});
+		var handles = [];
+		for (var i = 0; i < eventNames.length; i++) {
+			var info = extractListenerInfo_(component, events[eventNames[i]]);
+			if (info.fn) {
+				var handle = void 0;
+				if (info.selector) {
+					handle = component.delegate(eventNames[i], info.selector, info.fn);
+				} else {
+					handle = component.on(eventNames[i], info.fn);
+				}
+				handles.push(handle);
+			}
+		}
+		return handles;
+	}
+
+	this['metalNamed']['events'] = this['metalNamed']['events'] || {};
+	this['metalNamed']['events']['addListenersFromObj'] = addListenersFromObj; /**
+                                                                             * Extracts listener info from the given value.
+                                                                             * @param {!Component} component
+                                                                             * @param {!Component} component
+                                                                             * @param {function()|string|{selector:string,fn:function()|string}} value
+                                                                             * @return {!{selector:string,fn:function()}}
+                                                                             * @protected
+                                                                             */
+
+	function extractListenerInfo_(component, value) {
+		var info = {
+			fn: value
+		};
+		if (isObject(value) && !isFunction(value)) {
+			info.selector = value.selector;
+			info.fn = value.fn;
+		}
+		if (isString(info.fn)) {
+			info.fn = getComponentFn(component, info.fn);
+		}
+		return info;
+	}
+
+	/**
+  * Gets the listener function from its name. Throws an error if none exist.
+  * @param {!Component} component
+  * @param {string} fnName
+  * @return {function()}
+  */
+	function getComponentFn(component, fnName) {
+		if (isFunction(component[fnName])) {
+			return component[fnName].bind(component);
+		} else {
+			console.error('No function named ' + fnName + ' was found in the component\n\t\t\t"' + getFunctionName(component.constructor) + '". Make sure that you specify\n\t\t\tvalid function names when adding inline listeners');
+		}
+	}
+	this['metalNamed']['events']['getComponentFn'] = getComponentFn;
+}).call(this);
+'use strict';
+
+(function () {
+	var isFunction = this['metalNamed']['metal']['isFunction'];
+
+
+	var SYNC_FNS_KEY = '__METAL_SYNC_FNS__';
+
+	/**
+  * Gets the `sync` methods for this component's state. Caches the results in
+  * the component's constructor whenever possible, so that this doesn't need to
+  * be calculated again. It's not possible to cache the results when at least
+  * one sync method is defined in the instance itself instead of in its
+  * prototype, as it may be bound to the instance (not reusable by others).
+  * @param {!Component} component
+  * @return {!Object}
+  * @private
+  */
+	function getSyncFns_(component) {
+		var ctor = component.constructor;
+		if (ctor.hasOwnProperty(SYNC_FNS_KEY)) {
+			return ctor[SYNC_FNS_KEY];
+		}
+
+		var fns = {};
+		var keys = component.getDataManager().getSyncKeys(component);
+		var canCache = true;
+		for (var i = 0; i < keys.length; i++) {
+			var name = 'sync' + keys[i].charAt(0).toUpperCase() + keys[i].slice(1);
+			var fn = component[name];
+			if (fn) {
+				fns[keys[i]] = fn;
+				canCache = canCache && component.constructor.prototype[name];
+			}
+		}
+
+		if (canCache) {
+			ctor[SYNC_FNS_KEY] = fns;
+		}
+		return fns;
+	}
+
+	/**
+  * Calls "sync" functions for the given component's state.
+  * @param {!Component} component
+  * @param {Object=} opt_changes When given, only the properties inside it will
+  *     be synced. Otherwise all state properties will be synced.
+  */
+	function syncState(component, opt_changes) {
+		var syncFns = getSyncFns_(component);
+		var keys = Object.keys(opt_changes || syncFns);
+		for (var i = 0; i < keys.length; i++) {
+			var fn = syncFns[keys[i]];
+			if (isFunction(fn)) {
+				var change = opt_changes && opt_changes[keys[i]];
+				var manager = component.getDataManager();
+				fn.call(component, change ? change.newVal : manager.get(component, keys[i]), change ? change.prevVal : undefined);
+			}
+		}
+	}
+	this['metalNamed']['sync'] = this['metalNamed']['sync'] || {};
+	this['metalNamed']['sync']['syncState'] = syncState;
+}).call(this);
+'use strict';
+
+(function () {
+	var METAL_DATA = '__metal_data__';
+
+	var domData = function () {
+		function domData() {
+			babelHelpers.classCallCheck(this, domData);
+		}
+
+		babelHelpers.createClass(domData, null, [{
+			key: 'get',
+
+			/**
+    * Gets Metal.js's data for the given element.
+    * @param {!Element} element
+    * @param {string=} opt_name Optional property from the data to be returned.
+    * @param {*} opt_initialVal Optinal value to the set the requested property
+    *     to if it doesn't exist yet in the data.
+    * @return {!Object}
+    */
+			value: function get(element, opt_name, opt_initialVal) {
+				if (!element[METAL_DATA]) {
+					element[METAL_DATA] = {};
+				}
+				if (!opt_name) {
+					return element[METAL_DATA];
+				}
+				if (!element[METAL_DATA][opt_name] && opt_initialVal) {
+					element[METAL_DATA][opt_name] = opt_initialVal;
+				}
+				return element[METAL_DATA][opt_name];
+			}
+
+			/**
+    * Checks if the given element has data stored in it.
+    * @param {!Element} element
+    * @return {boolean}
+    */
+
+		}, {
+			key: 'has',
+			value: function has(element) {
+				return !!element[METAL_DATA];
+			}
+		}]);
+		return domData;
+	}();
+
+	this['metal']['domData'] = domData;
 }).call(this);
 'use strict';
 
@@ -3747,1202 +5030,6 @@ babelHelpers;
   this['metalNamed']['dom']['globalEval'] = globalEval;
   this['metalNamed']['dom']['globalEvalStyles'] = globalEvalStyles;
   this['metal']['dom'] = dom;
-}).call(this);
-'use strict';
-
-(function () {
-	var getFunctionName = this['metalNamed']['metal']['getFunctionName'];
-	var isDefAndNotNull = this['metalNamed']['metal']['isDefAndNotNull'];
-
-
-	var ERROR_ARRAY_OF_TYPE = 'Expected an array of single type.';
-	var ERROR_OBJECT_OF_TYPE = 'Expected object of one type.';
-	var ERROR_ONE_OF = 'Expected one of given values.';
-	var ERROR_ONE_OF_TYPE = 'Expected one of given types.';
-	var ERROR_SHAPE_OF = 'Expected object with a specific shape.';
-
-	/**
-  * Provides access to various type validators that will return an
-  * instance of Error when validation fails. Note that all type validators
-  * will also accept null or undefined values. To not accept these you should
-  * instead make your state property required.
-  */
-	var validators = {
-		any: function any() {
-			return function () {
-				return true;
-			};
-		},
-		array: buildTypeValidator('array'),
-		bool: buildTypeValidator('boolean'),
-		func: buildTypeValidator('function'),
-		number: buildTypeValidator('number'),
-		object: buildTypeValidator('object'),
-		string: buildTypeValidator('string'),
-
-		/**
-   * Creates a validator that checks that the value it receives is an array
-   * of items, and that all of the items pass the given validator.
-   * @param {!function()} validator Validator to check each item against.
-   * @return {!function()}
-   */
-		arrayOf: function arrayOf(validator) {
-			return maybe(function (value, name, context) {
-				var result = validators.array(value, name, context);
-				if (isInvalid(result)) {
-					return result;
-				}
-				return validateArrayItems(validator, value, name, context);
-			});
-		},
-
-		/**
-   * Creates a validator that checks if a value is an instance of a given class.
-   * @param {!function()} expectedClass Class to check value against.
-   * @return {!function()}
-   */
-		instanceOf: function instanceOf(expectedClass) {
-			return maybe(function (value, name, context) {
-				if (value instanceof expectedClass) {
-					return true;
-				}
-				var msg = 'Expected instance of ' + expectedClass;
-				return composeError(msg, name, context);
-			});
-		},
-
-		/**
-   * Creates a validator that checks that the value it receives is an object,
-   * and that all values within that object pass the given validator.
-   * @param {!function()} validator Validator to check each object value against.
-   * @return {!function()}
-   */
-		objectOf: function objectOf(validator) {
-			return maybe(function (value, name, context) {
-				for (var key in value) {
-					if (isInvalid(validator(value[key]))) {
-						return composeError(ERROR_OBJECT_OF_TYPE, name, context);
-					}
-				}
-				return true;
-			});
-		},
-
-		/**
-   * Creates a validator that checks if the received value matches one of the
-   * given values.
-   * @param {!Array} arrayOfValues Array of values to check equality against.
-   * @return {!function()}
-   */
-		oneOf: function oneOf(arrayOfValues) {
-			return maybe(function (value, name, context) {
-				var result = validators.array(arrayOfValues, name, context);
-				if (isInvalid(result)) {
-					return result;
-				}
-				return arrayOfValues.indexOf(value) === -1 ? composeError(ERROR_ONE_OF, name, context) : true;
-			});
-		},
-
-		/**
-   * Creates a validator that checks if the received value matches one of the
-   * given types.
-   * @param {!Array} arrayOfTypeValidators Array of validators to check value
-   *     against.
-   * @return {!function()}
-   */
-		oneOfType: function oneOfType(arrayOfTypeValidators) {
-			return maybe(function (value, name, context) {
-				var result = validators.array(arrayOfTypeValidators, name, context);
-				if (isInvalid(result)) {
-					return result;
-				}
-
-				for (var i = 0; i < arrayOfTypeValidators.length; i++) {
-					if (!isInvalid(arrayOfTypeValidators[i](value, name, context))) {
-						return true;
-					}
-				}
-				return composeError(ERROR_ONE_OF_TYPE, name, context);
-			});
-		},
-
-		/**
-   * Creates a validator that checks if the received value is an object, and
-   * that its contents match the given shape.
-   * @param {!Object} shape An object containing validators for each key.
-   * @return {!function()}
-   */
-		shapeOf: function shapeOf(shape) {
-			return maybe(function (value, name, context) {
-				var result = validators.object(shape, name, context);
-				if (isInvalid(result)) {
-					return result;
-				}
-
-				for (var key in shape) {
-					var validator = shape[key];
-					var required = false;
-					if (validator.config) {
-						required = validator.config.required;
-						validator = validator.config.validator;
-					}
-					if (required && !isDefAndNotNull(value[key]) || isInvalid(validator(value[key]))) {
-						return composeError(ERROR_SHAPE_OF, name, context);
-					}
-				}
-				return true;
-			});
-		}
-	};
-
-	/**
-  * Creates a validator that checks against a specific primitive type.
-  * @param {string} expectedType Type to check against.
-  * @return {!function()} Function that runs the validator if called with
-  *     arguments, or just returns it otherwise. This means that when using a
-  *     type validator in `State` it may be just passed directly (like
-  *     `validators.bool`), or called with no args (like `validators.bool()`).
-  *     That's done to allow all validators to be used consistently, since some
-  *     (like `arrayOf`) always require that you call the function before
-  *     receiving the actual validator. Type validators don't need the call, but
-  *     work if it's made anyway.
-  */
-	function buildTypeValidator(expectedType) {
-		var validatorFn = maybe(validateType.bind(null, expectedType));
-		return function () {
-			if (arguments.length === 0) {
-				return validatorFn;
-			} else {
-				return validatorFn.apply(undefined, arguments);
-			}
-		};
-	}
-
-	/**
-  * Composes a warning a warning message.
-  * @param {string} error Error message to display to console.
-  * @param {?string} name Name of state property that is giving the error.
-  * @param {Object} context The property's owner.
-  * @return {!Error}
-  */
-	function composeError(error, name, context) {
-		var compName = context ? getFunctionName(context.constructor) : null;
-		var renderer = context && context.getRenderer && context.getRenderer();
-		var parent = renderer && renderer.getParent && renderer.getParent();
-		var parentName = parent ? getFunctionName(parent.constructor) : null;
-		var location = parentName ? 'Check render method of \'' + parentName + '\'.' : '';
-		return new Error('Warning: Invalid state passed to \'' + name + '\'. ' + (error + ' Passed to \'' + compName + '\'. ' + location));
-	}
-
-	/**
-  * Returns the type of the given value.
-  * @param {*} value Any value.
-  * @return {string} Type of value.
-  */
-	function getType(value) {
-		return Array.isArray(value) ? 'array' : typeof value === 'undefined' ? 'undefined' : babelHelpers.typeof(value);
-	}
-
-	/**
-  * Checks if the given validator result says that the value is invalid.
-  * @param {boolean|!Error} result
-  * @return {boolean}
-  */
-	function isInvalid(result) {
-		return result instanceof Error;
-	}
-
-	/**
-  * Wraps the given validator so that it also accepts null/undefined values.
-  *   a validator that checks a value against a single type, null, or
-  * undefined.
-  * @param {!function()} typeValidator Validator to wrap.
-  * @return {!function()} Wrapped validator.
-  */
-	function maybe(typeValidator) {
-		return function (value, name, context) {
-			return isDefAndNotNull(value) ? typeValidator(value, name, context) : true;
-		};
-	}
-
-	/**
-  * Checks if all the items of the given array pass the given validator.
-  * @param {!function()} validator
-  * @param {*} value The array to validate items for.
-  * @param {string} name The name of the array property being checked.
-  * @param {!Object} context Owner of the array property being checked.
-  * @return {!Error|boolean} `true` if the type matches, or an error otherwise.
-  */
-	function validateArrayItems(validator, value, name, context) {
-		for (var i = 0; i < value.length; i++) {
-			if (isInvalid(validator(value[i], name, context))) {
-				return composeError(ERROR_ARRAY_OF_TYPE, name, context);
-			}
-		}
-		return true;
-	}
-
-	/**
-  * Checks if the given value matches the expected type.
-  * @param {string} expectedType String representing the expected type.
-  * @param {*} value The value to match the type of.
-  * @param {string} name The name of the property being checked.
-  * @param {!Object} context Owner of the property being checked.
-  * @return {!Error|boolean} `true` if the type matches, or an error otherwise.
-  */
-	function validateType(expectedType, value, name, context) {
-		var type = getType(value);
-		if (type !== expectedType) {
-			var msg = 'Expected type \'' + expectedType + '\', but received type \'' + type + '\'.';
-			return composeError(msg, name, context);
-		}
-		return true;
-	}
-
-	this['metal']['validators'] = validators;
-}).call(this);
-'use strict';
-
-(function () {
-	var object = this['metalNamed']['metal']['object'];
-	var validators = this['metal']['validators'];
-
-	/**
-  * Sugar api that can be used as an alternative for manually building `State`
-  * configuration in the expected format. For example, instead of having
-  * something like this:
-  *
-  * ```js
-  * MyClass.STATE = {
-  *   foo: {
-  *     required: true,
-  *     validator: validators.number,
-  *     value: 13
-  *   }
-  * };
-  * ```
-  *
-  * You could instead do:
-  *
-  * ```js
-  * MyClass.STATE = {
-  *   foo: Config.required().number().value(13)
-  * };
-  * ```
-  */
-
-	var Config = {
-		/**
-   * Adds the `internal` flag to the `State` configuration.
-   * @param {boolean} required Flag to set "internal" to. True by default.
-   * @return {!Object} `State` configuration object.
-   */
-		internal: function internal() {
-			var _internal = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : true;
-
-			return mergeConfig(this, {
-				internal: _internal
-			});
-		},
-
-
-		/**
-   * Adds the `required` flag to the `State` configuration.
-   * @param {boolean} required Flag to set "required" to. True by default.
-   * @return {!Object} `State` configuration object.
-   */
-		required: function required() {
-			var _required = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : true;
-
-			return mergeConfig(this, {
-				required: _required
-			});
-		},
-
-
-		/**
-   * Adds a setter to the `State` configuration.
-   * @param {!function()} setter
-   * @return {!Object} `State` configuration object.
-   */
-		setter: function setter(_setter) {
-			return mergeConfig(this, {
-				setter: _setter
-			});
-		},
-
-
-		/**
-   * Adds a validator to the `State` configuration.
-   * @param {!function()} validator
-   * @return {!Object} `State` configuration object.
-   */
-		validator: function validator(_validator) {
-			return mergeConfig(this, {
-				validator: _validator
-			});
-		},
-
-
-		/**
-   * Adds a default value to the `State` configuration.
-   * @param {*} value
-   * @return {!Object} `State` configuration object.
-   */
-		value: function value(_value) {
-			return mergeConfig(this, {
-				value: _value
-			});
-		}
-	};
-
-	/**
-  * Merges the given config object into the one that has been built so far.
-  * @param {!Object} context The object calling this function.
-  * @param {!Object} config The object to merge to the built config.
-  * @return {!Object} The final object containing the built config.
-  */
-	function mergeConfig(context, config) {
-		var obj = context;
-		if (obj === Config) {
-			obj = Object.create(Config);
-			obj.config = {};
-		}
-		object.mixin(obj.config, config);
-		return obj;
-	}
-
-	// Add all validators to `Config`.
-	var fnNames = Object.keys(validators);
-	fnNames.forEach(function (name) {
-		return Config[name] = function () {
-			return this.validator(validators[name]);
-		};
-	});
-
-	this['metal']['Config'] = Config;
-}).call(this);
-'use strict';
-
-(function () {
-	var async = this['metalNamed']['metal']['async'];
-	var getStaticProperty = this['metalNamed']['metal']['getStaticProperty'];
-	var isDefAndNotNull = this['metalNamed']['metal']['isDefAndNotNull'];
-	var isFunction = this['metalNamed']['metal']['isFunction'];
-	var isObject = this['metalNamed']['metal']['isObject'];
-	var isString = this['metalNamed']['metal']['isString'];
-	var object = this['metalNamed']['metal']['object'];
-	var EventEmitter = this['metalNamed']['events']['EventEmitter'];
-
-	/**
-  * State adds support for having object properties that can be watched for
-  * changes, as well as configured with validators, setters and other options.
-  * See the `configState` method for a complete list of available configuration
-  * options for each state key.
-  * @extends {EventEmitter}
-  */
-
-	var State = function (_EventEmitter) {
-		babelHelpers.inherits(State, _EventEmitter);
-
-		/**
-   * Constructor function for `State`.
-   * @param {Object=} opt_config Optional config object with initial values to
-   *     set state properties to.
-   * @param {Object=} opt_obj Optional object that should hold the state
-   *     properties. If none is given, they will be added directly to `this`
-   *     instead.
-   * @param {Object=} opt_context Optional context to call functions (like
-   *     validators and setters) on. Defaults to `this`.
-   */
-		function State(opt_config, opt_obj, opt_context) {
-			babelHelpers.classCallCheck(this, State);
-
-			/**
-    * Context to call functions (like validators and setters) on.
-    * @type {!Object}
-    * @protected
-    */
-			var _this = babelHelpers.possibleConstructorReturn(this, (State.__proto__ || Object.getPrototypeOf(State)).call(this));
-
-			_this.context_ = opt_context || _this;
-
-			/**
-    * Map of keys that can not be used as state keys.
-    * @type {Object<string, boolean>}
-    * @protected
-    */
-			_this.keysBlacklist_ = null;
-
-			/**
-    * Object that should hold the state properties.
-    * @type {!Object}
-    * @protected
-    */
-			_this.obj_ = opt_obj || _this;
-
-			_this.eventData_ = null;
-
-			/**
-    * Object with information about the batch event that is currently
-    * scheduled, or null if none is.
-    * @type {Object}
-    * @protected
-    */
-			_this.scheduledBatchData_ = null;
-
-			/**
-    * Object that contains information about all this instance's state keys.
-    * @type {!Object<string, !Object>}
-    * @protected
-    */
-			_this.stateInfo_ = {};
-
-			_this.stateConfigs_ = {};
-
-			_this.initialValues_ = object.mixin({}, opt_config);
-
-			_this.setShouldUseFacade(true);
-			_this.configStateFromStaticHint_();
-
-			Object.defineProperty(_this.obj_, State.STATE_REF_KEY, {
-				configurable: true,
-				enumerable: false,
-				value: _this
-			});
-			return _this;
-		}
-
-		/**
-   * Logs an error if the given property is required but wasn't given.
-   * @param {string} name
-   * @protected
-   */
-
-
-		babelHelpers.createClass(State, [{
-			key: 'assertGivenIfRequired_',
-			value: function assertGivenIfRequired_(name) {
-				var config = this.stateConfigs_[name];
-				if (config.required) {
-					var info = this.getStateInfo(name);
-					var value = info.state === State.KeyStates.INITIALIZED ? this.get(name) : this.initialValues_[name];
-					if (!isDefAndNotNull(value)) {
-						var errorMessage = 'The property called "' + name + '" is required but didn\'t receive a value.';
-						if (this.shouldThrowValidationError()) {
-							throw new Error(errorMessage);
-						} else {
-							console.error(errorMessage);
-						}
-					}
-				}
-			}
-
-			/**
-    * Logs an error if the `validatorReturn` is instance of `Error`.
-    * @param {*} validatorReturn
-    * @protected
-    */
-
-		}, {
-			key: 'assertValidatorReturnInstanceOfError_',
-			value: function assertValidatorReturnInstanceOfError_(validatorReturn) {
-				if (validatorReturn instanceof Error) {
-					if (this.shouldThrowValidationError()) {
-						throw validatorReturn;
-					} else {
-						console.error('Warning: ' + validatorReturn);
-					}
-				}
-			}
-
-			/**
-    * Checks that the given name is a valid state key name. If it's not, an error
-    * will be thrown.
-    * @param {string} name The name to be validated.
-    * @throws {Error}
-    * @protected
-    */
-
-		}, {
-			key: 'assertValidStateKeyName_',
-			value: function assertValidStateKeyName_(name) {
-				if (this.keysBlacklist_ && this.keysBlacklist_[name]) {
-					throw new Error('It\'s not allowed to create a state key with the name "' + name + '".');
-				}
-			}
-
-			/**
-    * Builds the property definition object for the specified state key.
-    * @param {string} name The name of the key.
-    * @return {!Object}
-    * @protected
-    */
-
-		}, {
-			key: 'buildKeyPropertyDef_',
-			value: function buildKeyPropertyDef_(name) {
-				return {
-					configurable: true,
-					enumerable: true,
-					get: function get() {
-						return this[State.STATE_REF_KEY].getStateKeyValue_(name);
-					},
-					set: function set(val) {
-						this[State.STATE_REF_KEY].setStateKeyValue_(name, val);
-					}
-				};
-			}
-
-			/**
-    * Calls the requested function, running the appropriate code for when it's
-    * passed as an actual function object or just the function's name.
-    * @param {!Function|string} fn Function, or name of the function to run.
-    * @param {!Array} An optional array of parameters to be passed to the
-    *   function that will be called.
-    * @return {*} The return value of the called function.
-    * @protected
-    */
-
-		}, {
-			key: 'callFunction_',
-			value: function callFunction_(fn, args) {
-				if (isString(fn)) {
-					return this.context_[fn].apply(this.context_, args);
-				} else if (isFunction(fn)) {
-					return fn.apply(this.context_, args);
-				}
-			}
-
-			/**
-    * Calls the state key's setter, if there is one.
-    * @param {string} name The name of the key.
-    * @param {*} value The value to be set.
-    * @param {*} currentValue The current value.
-    * @return {*} The final value to be set.
-    * @protected
-    */
-
-		}, {
-			key: 'callSetter_',
-			value: function callSetter_(name, value, currentValue) {
-				var config = this.stateConfigs_[name];
-				if (config.setter) {
-					value = this.callFunction_(config.setter, [value, currentValue]);
-				}
-				return value;
-			}
-
-			/**
-    * Calls the state key's validator, if there is one. Emits console
-    * warning if validator returns a string.
-    * @param {string} name The name of the key.
-    * @param {*} value The value to be validated.
-    * @return {boolean} Flag indicating if value is valid or not.
-    * @protected
-    */
-
-		}, {
-			key: 'callValidator_',
-			value: function callValidator_(name, value) {
-				var config = this.stateConfigs_[name];
-				if (config.validator) {
-					var validatorReturn = this.callFunction_(config.validator, [value, name, this.context_]);
-					this.assertValidatorReturnInstanceOfError_(validatorReturn);
-					return validatorReturn;
-				}
-				return true;
-			}
-
-			/**
-    * Checks if the it's allowed to write on the requested state key.
-    * @param {string} name The name of the key.
-    * @return {boolean}
-    */
-
-		}, {
-			key: 'canSetState',
-			value: function canSetState(name) {
-				var info = this.getStateInfo(name);
-				return !this.stateConfigs_[name].writeOnce || !info.written;
-			}
-
-			/**
-    * Adds the given key(s) to the state, together with its(their) configs.
-    * Config objects support the given settings:
-    *     required - When set to `true`, causes errors to be printed (via
-    *     `console.error`) if no value is given for the property.
-    *
-    *     setter - Function for normalizing state key values. It receives the new
-    *     value that was set, and returns the value that should be stored.
-    *
-    *     validator - Function that validates state key values. When it returns
-    *     false, the new value is ignored. When it returns an instance of Error,
-    *     it will emit the error to the console.
-    *
-    *     value - The default value for the state key. Note that setting this to
-    *     an object will cause all class instances to use the same reference to
-    *     the object. To have each instance use a different reference for objects,
-    *     use the `valueFn` option instead.
-    *
-    *     valueFn - A function that returns the default value for a state key.
-    *
-    *     writeOnce - Ignores writes to the state key after it's been first
-    *     written to. That is, allows writes only when setting the value for the
-    *     first time.
-    * @param {!Object.<string, !Object>|string} configs An object that maps
-    *     configuration options for keys to be added to the state.
-    * @param {boolean|Object|*=} opt_context The context where the added state
-    *     keys will be defined (defaults to `this`), or false if they shouldn't
-    *     be defined at all.
-    */
-
-		}, {
-			key: 'configState',
-			value: function configState(configs, opt_context) {
-				var names = Object.keys(configs);
-				if (names.length === 0) {
-					return;
-				}
-
-				if (opt_context !== false) {
-					var props = {};
-					for (var i = 0; i < names.length; i++) {
-						var name = names[i];
-						this.assertValidStateKeyName_(name);
-						props[name] = this.buildKeyPropertyDef_(name);
-					}
-					Object.defineProperties(opt_context || this.obj_, props);
-				}
-
-				this.stateConfigs_ = configs;
-				for (var _i = 0; _i < names.length; _i++) {
-					var _name = names[_i];
-					configs[_name] = configs[_name].config ? configs[_name].config : configs[_name];
-					this.assertGivenIfRequired_(names[_i]);
-					this.validateInitialValue_(names[_i]);
-				}
-			}
-
-			/**
-    * Adds state keys from super classes static hint `MyClass.STATE = {};`.
-    * @param {Object.<string, !Object>=} opt_config An object that maps all the
-    *     configurations for state keys.
-    * @protected
-    */
-
-		}, {
-			key: 'configStateFromStaticHint_',
-			value: function configStateFromStaticHint_() {
-				var ctor = this.constructor;
-				if (ctor !== State) {
-					var defineContext = void 0;
-					if (this.obj_ === this) {
-						defineContext = ctor.hasConfiguredState_ ? false : ctor.prototype;
-						ctor.hasConfiguredState_ = true;
-					}
-					this.configState(State.getStateStatic(ctor), defineContext);
-				}
-			}
-
-			/**
-    * @inheritDoc
-    */
-
-		}, {
-			key: 'disposeInternal',
-			value: function disposeInternal() {
-				babelHelpers.get(State.prototype.__proto__ || Object.getPrototypeOf(State.prototype), 'disposeInternal', this).call(this);
-				this.initialValues_ = null;
-				this.stateInfo_ = null;
-				this.stateConfigs_ = null;
-				this.scheduledBatchData_ = null;
-			}
-
-			/**
-    * Emits the state change batch event.
-    * @protected
-    */
-
-		}, {
-			key: 'emitBatchEvent_',
-			value: function emitBatchEvent_() {
-				if (!this.isDisposed()) {
-					var data = this.scheduledBatchData_;
-					this.scheduledBatchData_ = null;
-					this.context_.emit('stateChanged', data);
-				}
-			}
-
-			/**
-    * Returns the value of the requested state key.
-    * Note: this can and should be accomplished by accessing the value as a
-    * regular property. This should only be used in cases where a function is
-    * actually needed.
-    * @param {string} name
-    * @return {*}
-    */
-
-		}, {
-			key: 'get',
-			value: function get(name) {
-				return this.obj_[name];
-			}
-
-			/**
-    * Returns an object that maps state keys to their values.
-    * @param {Array<string>=} opt_names A list of names of the keys that should
-    *   be returned. If none is given, the whole state will be returned.
-    * @return {Object.<string, *>}
-    */
-
-		}, {
-			key: 'getState',
-			value: function getState(opt_names) {
-				var state = {};
-				var names = opt_names || this.getStateKeys();
-
-				for (var i = 0; i < names.length; i++) {
-					state[names[i]] = this.get(names[i]);
-				}
-
-				return state;
-			}
-
-			/**
-    * Gets information about the specified state property.
-    * @param {string} name
-    * @return {!Object}
-    */
-
-		}, {
-			key: 'getStateInfo',
-			value: function getStateInfo(name) {
-				if (!this.stateInfo_[name]) {
-					this.stateInfo_[name] = {};
-				}
-				return this.stateInfo_[name];
-			}
-
-			/**
-    * Gets the config object for the requested state key.
-    * @param {string} name The key's name.
-    * @return {Object}
-    * @protected
-    */
-
-		}, {
-			key: 'getStateKeyConfig',
-			value: function getStateKeyConfig(name) {
-				return this.stateConfigs_ ? this.stateConfigs_[name] : null;
-			}
-
-			/**
-    * Returns an array with all state keys.
-    * @return {!Array.<string>}
-    */
-
-		}, {
-			key: 'getStateKeys',
-			value: function getStateKeys() {
-				return this.stateConfigs_ ? Object.keys(this.stateConfigs_) : [];
-			}
-
-			/**
-    * Gets the value of the specified state key. This is passed as that key's
-    * getter to the `Object.defineProperty` call inside the `addKeyToState` method.
-    * @param {string} name The name of the key.
-    * @return {*}
-    * @protected
-    */
-
-		}, {
-			key: 'getStateKeyValue_',
-			value: function getStateKeyValue_(name) {
-				if (!this.warnIfDisposed_(name)) {
-					this.initStateKey_(name);
-					return this.getStateInfo(name).value;
-				}
-			}
-
-			/**
-    * Merges the STATE static variable for the given constructor function.
-    * @param  {!Function} ctor Constructor function.
-    * @return {boolean} Returns true if merge happens, false otherwise.
-    * @static
-    */
-
-		}, {
-			key: 'hasBeenSet',
-
-
-			/**
-    * Checks if the value of the state key with the given name has already been
-    * set. Note that this doesn't run the key's getter.
-    * @param {string} name The name of the key.
-    * @return {boolean}
-    */
-			value: function hasBeenSet(name) {
-				var info = this.getStateInfo(name);
-				return info.state === State.KeyStates.INITIALIZED || this.hasInitialValue_(name);
-			}
-
-			/**
-    * Checks if an initial value was given to the specified state property.
-    * @param {string} name The name of the key.
-    * @return {boolean}
-    * @protected
-    */
-
-		}, {
-			key: 'hasInitialValue_',
-			value: function hasInitialValue_(name) {
-				return this.initialValues_.hasOwnProperty(name);
-			}
-
-			/**
-    * Checks if the given key is present in this instance's state.
-    * @param {string} key
-    * @return {boolean}
-    */
-
-		}, {
-			key: 'hasStateKey',
-			value: function hasStateKey(key) {
-				if (!this.warnIfDisposed_(key)) {
-					return !!this.stateConfigs_[key];
-				}
-			}
-
-			/**
-    * Informs of changes to a state key's value through an event. Won't trigger
-    * the event if the value hasn't changed or if it's being initialized.
-    * @param {string} name The name of the key.
-    * @param {*} prevVal The previous value of the key.
-    * @protected
-    */
-
-		}, {
-			key: 'informChange_',
-			value: function informChange_(name, prevVal) {
-				if (this.shouldInformChange_(name, prevVal)) {
-					var data = object.mixin({
-						key: name,
-						newVal: this.get(name),
-						prevVal: prevVal
-					}, this.eventData_);
-					this.context_.emit(name + 'Changed', data);
-					this.context_.emit('stateKeyChanged', data);
-					this.scheduleBatchEvent_(data);
-				}
-			}
-
-			/**
-    * Initializes the specified state key, giving it a first value.
-    * @param {string} name The name of the key.
-    * @protected
-    */
-
-		}, {
-			key: 'initStateKey_',
-			value: function initStateKey_(name) {
-				var info = this.getStateInfo(name);
-				if (info.state !== State.KeyStates.UNINITIALIZED) {
-					return;
-				}
-
-				info.state = State.KeyStates.INITIALIZING;
-				this.setInitialValue_(name);
-				if (!info.written) {
-					this.setDefaultValue(name);
-				}
-				info.state = State.KeyStates.INITIALIZED;
-			}
-
-			/**
-    * Merges two values for the STATE property into a single object.
-    * @param {Object} mergedVal
-    * @param {Object} currVal
-    * @return {!Object} The merged value.
-    * @static
-    */
-
-		}, {
-			key: 'removeStateKey',
-
-
-			/**
-    * Removes the requested state key.
-    * @param {string} name The name of the key.
-    */
-			value: function removeStateKey(name) {
-				this.stateInfo_[name] = null;
-				this.stateConfigs_[name] = null;
-				delete this.obj_[name];
-			}
-
-			/**
-    * Schedules a state change batch event to be emitted asynchronously.
-    * @param {!Object} changeData Information about a state key's update.
-    * @protected
-    */
-
-		}, {
-			key: 'scheduleBatchEvent_',
-			value: function scheduleBatchEvent_(changeData) {
-				if (!this.scheduledBatchData_) {
-					async.nextTick(this.emitBatchEvent_, this);
-					this.scheduledBatchData_ = object.mixin({
-						changes: {}
-					}, this.eventData_);
-				}
-
-				var name = changeData.key;
-				var changes = this.scheduledBatchData_.changes;
-				if (changes[name]) {
-					changes[name].newVal = changeData.newVal;
-				} else {
-					changes[name] = changeData;
-				}
-			}
-
-			/**
-    * Sets the value of the requested state key.
-    * Note: this can and should be accomplished by setting the state key as a
-    * regular property. This should only be used in cases where a function is
-    * actually needed.
-    * @param {string} name
-    * @param {*} value
-    * @return {*}
-    */
-
-		}, {
-			key: 'set',
-			value: function set(name, value) {
-				if (this.hasStateKey(name)) {
-					this.obj_[name] = value;
-				}
-			}
-
-			/**
-    * Sets the default value of the requested state key.
-    * @param {string} name The name of the key.
-    * @return {*}
-    */
-
-		}, {
-			key: 'setDefaultValue',
-			value: function setDefaultValue(name) {
-				var config = this.stateConfigs_[name];
-
-				if (config.value !== undefined) {
-					this.set(name, config.value);
-				} else {
-					this.set(name, this.callFunction_(config.valueFn));
-				}
-			}
-
-			/**
-    * Sets data to be sent with all events emitted from this instance.
-    * @param {Object}
-    */
-
-		}, {
-			key: 'setEventData',
-			value: function setEventData(data) {
-				this.eventData_ = data;
-			}
-
-			/**
-    * Sets the initial value of the requested state key.
-    * @param {string} name The name of the key.
-    * @return {*}
-    * @protected
-    */
-
-		}, {
-			key: 'setInitialValue_',
-			value: function setInitialValue_(name) {
-				if (this.hasInitialValue_(name)) {
-					this.set(name, this.initialValues_[name]);
-					this.initialValues_[name] = undefined;
-				}
-			}
-
-			/**
-    * Sets a map of keys that are not valid state keys.
-    * @param {!Object<string, boolean>}
-    */
-
-		}, {
-			key: 'setKeysBlacklist',
-			value: function setKeysBlacklist(blacklist) {
-				this.keysBlacklist_ = blacklist;
-			}
-
-			/**
-    * Sets the value of all the specified state keys.
-    * @param {!Object.<string,*>} values A map of state keys to the values they
-    *   should be set to.
-    * @param {function()=} opt_callback An optional function that will be run
-    *   after the next batched update is triggered.
-    */
-
-		}, {
-			key: 'setState',
-			value: function setState(values, opt_callback) {
-				var _this2 = this;
-
-				Object.keys(values).forEach(function (name) {
-					return _this2.set(name, values[name]);
-				});
-				if (opt_callback && this.scheduledBatchData_) {
-					this.context_.once('stateChanged', opt_callback);
-				}
-			}
-
-			/**
-    * Sets the value of the specified state key. This is passed as that key's
-    * setter to the `Object.defineProperty` call inside the `addKeyToState`
-    * method.
-    * @param {string} name The name of the key.
-    * @param {*} value The new value of the key.
-    * @protected
-    */
-
-		}, {
-			key: 'setStateKeyValue_',
-			value: function setStateKeyValue_(name, value) {
-				if (this.warnIfDisposed_(name) || !this.canSetState(name) || !this.validateKeyValue_(name, value)) {
-					return;
-				}
-
-				var prevVal = this.get(name);
-				var info = this.getStateInfo(name);
-				info.value = this.callSetter_(name, value, prevVal);
-				this.assertGivenIfRequired_(name);
-				info.written = true;
-				this.informChange_(name, prevVal);
-			}
-
-			/**
-    * Checks if we should inform about a state update. Updates are ignored during
-    * state initialization. Otherwise, updates to primitive values are only
-    * informed when the new value is different from the previous one. Updates to
-    * objects (which includes functions and arrays) are always informed outside
-    * initialization though, since we can't be sure if all of the internal data
-    * has stayed the same.
-    * @param {string} name The name of the key.
-    * @param {*} prevVal The previous value of the key.
-    * @return {boolean}
-    * @protected
-    */
-
-		}, {
-			key: 'shouldInformChange_',
-			value: function shouldInformChange_(name, prevVal) {
-				var info = this.getStateInfo(name);
-				return info.state === State.KeyStates.INITIALIZED && (isObject(prevVal) || prevVal !== this.get(name));
-			}
-
-			/**
-    * Returns a boolean that determines whether or not should throw error when
-    * vaildator functions returns an `Error` instance.
-    * @return {boolean} By default returns false.
-    */
-
-		}, {
-			key: 'shouldThrowValidationError',
-			value: function shouldThrowValidationError() {
-				return false;
-			}
-
-			/**
-    * Validates the initial value for the state property with the given name.
-    * @param {string} name
-    * @protected
-    */
-
-		}, {
-			key: 'validateInitialValue_',
-			value: function validateInitialValue_(name) {
-				if (this.hasInitialValue_(name) && !this.callValidator_(name, this.initialValues_[name])) {
-					delete this.initialValues_[name];
-				}
-			}
-
-			/**
-    * Validates the state key's value, which includes calling the validator
-    * defined in the key's configuration object, if there is one.
-    * @param {string} name The name of the key.
-    * @param {*} value The value to be validated.
-    * @return {boolean} Flag indicating if value is valid or not.
-    * @protected
-    */
-
-		}, {
-			key: 'validateKeyValue_',
-			value: function validateKeyValue_(name, value) {
-				var info = this.getStateInfo(name);
-				return info.state === State.KeyStates.INITIALIZING || this.callValidator_(name, value);
-			}
-
-			/**
-    * Warns if this instance has already been disposed.
-    * @param {string} name Name of the property to be accessed if not disposed.
-    * @return {boolean} True if disposed, or false otherwise.
-    * @protected
-    */
-
-		}, {
-			key: 'warnIfDisposed_',
-			value: function warnIfDisposed_(name) {
-				var disposed = this.isDisposed();
-				if (disposed) {
-					console.warn('Error. Trying to access property "' + name + '" on disposed instance');
-				}
-				return disposed;
-			}
-		}], [{
-			key: 'getStateStatic',
-			value: function getStateStatic(ctor) {
-				return getStaticProperty(ctor, 'STATE', State.mergeState);
-			}
-		}, {
-			key: 'mergeState',
-			value: function mergeState(mergedVal, currVal) {
-				return object.mixin({}, currVal, mergedVal);
-			}
-		}]);
-		return State;
-	}(EventEmitter);
-
-	State.STATE_REF_KEY = '__METAL_STATE_REF_KEY__';
-
-	/**
-  * Constants that represent the states that a state key can be in.
-  * @type {!Object}
-  */
-	State.KeyStates = {
-		UNINITIALIZED: undefined,
-		INITIALIZING: 1,
-		INITIALIZED: 2
-	};
-
-	this['metal']['State'] = State;
-}).call(this);
-'use strict';
-
-(function () {
-  var validators = this['metal']['validators'];
-  var Config = this['metal']['Config'];
-  var State = this['metal']['State'];
-  this['metal']['state'] = State;
-  this['metalNamed']['state'] = this['metalNamed']['state'] || {};
-  this['metalNamed']['state']['validators'] = validators;
-  this['metalNamed']['state']['Config'] = Config;
-  this['metalNamed']['state']['State'] = State;
 }).call(this);
 'use strict';
 
@@ -14318,177 +14405,6 @@ babelHelpers;
   var templates;
   goog.loadModule(function (exports) {
 
-    // This file was automatically generated from Doctype.soy.
-    // Please don't edit this file by hand.
-
-    /**
-     * @fileoverview Templates in namespace Doctype.
-     * @public
-     */
-
-    goog.module('Doctype.incrementaldom');
-
-    /** @suppress {extraRequire} */
-    var soy = goog.require('soy');
-    /** @suppress {extraRequire} */
-    var soydata = goog.require('soydata');
-    /** @suppress {extraRequire} */
-    goog.require('goog.i18n.bidi');
-    /** @suppress {extraRequire} */
-    goog.require('goog.asserts');
-    /** @suppress {extraRequire} */
-    goog.require('goog.string');
-    var IncrementalDom = goog.require('incrementaldom');
-    var ie_open = IncrementalDom.elementOpen;
-    var ie_close = IncrementalDom.elementClose;
-    var ie_void = IncrementalDom.elementVoid;
-    var ie_open_start = IncrementalDom.elementOpenStart;
-    var ie_open_end = IncrementalDom.elementOpenEnd;
-    var itext = IncrementalDom.text;
-    var iattr = IncrementalDom.attr;
-
-    /**
-     * @param {Object<string, *>=} opt_data
-     * @param {(null|undefined)=} opt_ignored
-     * @param {Object<string, *>=} opt_ijData
-     * @return {void}
-     * @suppress {checkTypes}
-     */
-    function $render(opt_data, opt_ignored, opt_ijData) {
-      ie_open('IFRAME');
-      ie_open('!DOCTYPE', null, null, 'html', '');
-      ie_open('html');
-      ie_void('head');
-      ie_void('body');
-      ie_close('html');
-      ie_close('IFRAME');
-    }
-    exports.render = $render;
-    if (goog.DEBUG) {
-      $render.soyTemplateName = 'Doctype.render';
-    }
-
-    exports.render.params = [];
-    exports.render.types = {};
-    templates = exports;
-    return exports;
-  });
-
-  var Doctype = function (_Component) {
-    babelHelpers.inherits(Doctype, _Component);
-
-    function Doctype() {
-      babelHelpers.classCallCheck(this, Doctype);
-      return babelHelpers.possibleConstructorReturn(this, (Doctype.__proto__ || Object.getPrototypeOf(Doctype)).apply(this, arguments));
-    }
-
-    return Doctype;
-  }(Component);
-
-  Soy.register(Doctype, templates);
-  this['metalNamed']['Doctype'] = this['metalNamed']['Doctype'] || {};
-  this['metalNamed']['Doctype']['Doctype'] = Doctype;
-  this['metalNamed']['Doctype']['templates'] = templates;
-  this['metal']['Doctype'] = templates;
-  /* jshint ignore:end */
-}).call(this);
-'use strict';
-
-(function () {
-	var State = this['metal']['state'];
-
-	var IFrame = function (_State) {
-		babelHelpers.inherits(IFrame, _State);
-
-		function IFrame() {
-			babelHelpers.classCallCheck(this, IFrame);
-			return babelHelpers.possibleConstructorReturn(this, (IFrame.__proto__ || Object.getPrototypeOf(IFrame)).apply(this, arguments));
-		}
-
-		babelHelpers.createClass(IFrame, [{
-			key: 'loadMetal',
-			value: function loadMetal() {
-				var that = this;
-				Ajax.request(this.metal_link, 'GET').then(function (xhr) {
-					that.metalSource = xhr.responseText;
-				});
-			}
-		}, {
-			key: 'createIFrame',
-			value: function createIFrame() {
-				// create the iframe and attach it to the document
-				var iframe = document.createElement("iframe");
-				try {
-					this.parentElement.removeChild(this.iframe);
-				} catch (err) {};
-				iframe = this.parentElement.appendChild(iframe);
-
-				// find the iframe's document and write some content
-				var idocument = iframe.contentDocument || iframe.contentWindow.document;
-
-				idocument.open();
-				idocument.write("<!DOCTYPE html>");
-				idocument.write("<html>");
-				idocument.write("<head>");
-				idocument.write('<link rel="stylesheet" href="' + this.bootstrap_link + '">');
-				idocument.write('<script src="' + this.metal_link + '"></script>');
-				idocument.write("<style>");
-				idocument.write(this.css);
-				idocument.write("</style>");
-				idocument.write("</head>");
-				idocument.write("<body>");
-				idocument.write(this.html);
-				idocument.write("<script>");
-				idocument.write(this.js);
-				idocument.write("</script>");
-				idocument.write("</body>");
-				idocument.write("</html>");
-				idocument.close();
-
-				this.iframe = iframe;
-				this.idocument = idocument;
-			}
-		}, {
-			key: 'setContent',
-			value: function setContent(css, js, html) {
-				if (css !== this.css || js !== this.js || html != this.html) {
-					this.css = css;
-					this.js = js;
-					this.html = html;
-					this.createIFrame();
-				}
-			}
-		}]);
-		return IFrame;
-	}(State);
-
-	IFrame.STATE = {
-		metal_link: {
-			//value : 'https://metal.github.io/metal.js-standalone/bin/metal.bundle.js'
-			//value: 'https://code.jquery.com/jquery-3.1.1.min.js'
-			value: '../build/globals/playground.js'
-		},
-		bootstrap_link: {
-			value: 'bootstrap.min.css'
-		},
-		iframe: { value: {} },
-		idocument: { value: {} },
-		metalSource: { value: '' },
-		parentElement: { value: {} }
-	};
-
-	this['metal']['IFrame'] = IFrame;
-}).call(this);
-'use strict';
-
-(function () {
-  /* jshint ignore:start */
-  var Component = this['metal']['component'];
-  var Soy = this['metal']['Soy'];
-
-  var templates;
-  goog.loadModule(function (exports) {
-
     // This file was automatically generated from Playground.soy.
     // Please don't edit this file by hand.
 
@@ -22748,6 +22664,2412 @@ babelHelpers;
 'use strict';
 
 (function () {
+	var core = this['metal']['metal'];
+	var State = this['metal']['state'];
+	var Position = this['metal']['position'];
+
+	/**
+  * Helper called by the `Drag` instance that scrolls elements when the
+  * mouse is near their boundaries.
+  */
+
+	var DragAutoScroll = function (_State) {
+		babelHelpers.inherits(DragAutoScroll, _State);
+
+		/**
+   * @inheritDoc
+   */
+		function DragAutoScroll(opt_config) {
+			babelHelpers.classCallCheck(this, DragAutoScroll);
+
+			/**
+    * The handler for the current call to `setTimeout`.
+    * @type {?number}
+    * @protected
+    */
+			var _this = babelHelpers.possibleConstructorReturn(this, (DragAutoScroll.__proto__ || Object.getPrototypeOf(DragAutoScroll)).call(this, opt_config));
+
+			_this.scrollTimeout_ = null;
+			return _this;
+		}
+
+		/**
+   * @inheritDoc
+   */
+
+
+		babelHelpers.createClass(DragAutoScroll, [{
+			key: 'disposeInternal',
+			value: function disposeInternal() {
+				babelHelpers.get(DragAutoScroll.prototype.__proto__ || Object.getPrototypeOf(DragAutoScroll.prototype), 'disposeInternal', this).call(this);
+				this.stop();
+			}
+
+			/**
+    * Gets the region for the given scroll container, without including scroll.
+    * @param {!Element} scrollContainer
+    * @return {!Object}
+    * @protected
+    */
+
+		}, {
+			key: 'getRegionWithoutScroll_',
+			value: function getRegionWithoutScroll_(scrollContainer) {
+				if (core.isDocument(scrollContainer)) {
+					var height = window.innerHeight;
+					var width = window.innerWidth;
+					return Position.makeRegion(height, height, 0, width, 0, width);
+				} else {
+					return Position.getRegion(scrollContainer);
+				}
+			}
+
+			/**
+    * Schedules a function to scroll the given containers.
+    * @param {!Array<!Element>} scrollContainers
+    * @param {number} mouseX
+    * @param {number} mouseY
+    */
+
+		}, {
+			key: 'scroll',
+			value: function scroll(scrollContainers, mouseX, mouseY) {
+				this.stop();
+				this.scrollTimeout_ = setTimeout(this.scrollInternal_.bind(this, scrollContainers, mouseX, mouseY), this.delay);
+			}
+
+			/**
+    * Adds the given deltas to the given element's scroll position.
+    * @param {!Element} element
+    * @param {number} deltaX
+    * @param {number} deltaY
+    * @protected
+    */
+
+		}, {
+			key: 'scrollElement_',
+			value: function scrollElement_(element, deltaX, deltaY) {
+				if (core.isDocument(element)) {
+					window.scrollBy(deltaX, deltaY);
+				} else {
+					element.scrollTop += deltaY;
+					element.scrollLeft += deltaX;
+				}
+			}
+
+			/**
+    * Scrolls the given containers if the mouse is near their boundaries.
+    * @param {!Array<!Element>} scrollContainers
+    * @param {number} mouseX
+    * @param {number} mouseY
+    * @protected
+    */
+
+		}, {
+			key: 'scrollInternal_',
+			value: function scrollInternal_(scrollContainers, mouseX, mouseY) {
+				for (var i = 0; i < scrollContainers.length; i++) {
+					var scrollRegion = this.getRegionWithoutScroll_(scrollContainers[i]);
+					if (!Position.pointInsideRegion(mouseX, mouseY, scrollRegion)) {
+						continue;
+					}
+
+					var deltaX = 0;
+					var deltaY = 0;
+					var scrollTop = Position.getScrollTop(scrollContainers[i]);
+					var scrollLeft = Position.getScrollLeft(scrollContainers[i]);
+					if (scrollLeft > 0 && Math.abs(mouseX - scrollRegion.left) <= this.maxDistance) {
+						deltaX -= this.speed;
+					} else if (Math.abs(mouseX - scrollRegion.right) <= this.maxDistance) {
+						deltaX += this.speed;
+					}
+					if (scrollTop > 0 && Math.abs(mouseY - scrollRegion.top) <= this.maxDistance) {
+						deltaY -= this.speed;
+					} else if (Math.abs(mouseY - scrollRegion.bottom) <= this.maxDistance) {
+						deltaY += this.speed;
+					}
+
+					if (deltaX || deltaY) {
+						this.scrollElement_(scrollContainers[i], deltaX, deltaY);
+						this.scroll(scrollContainers, mouseX, mouseY);
+						break;
+					}
+				}
+			}
+
+			/**
+    * Stops any auto scrolling that was scheduled to happen in the future.
+    */
+
+		}, {
+			key: 'stop',
+			value: function stop() {
+				clearTimeout(this.scrollTimeout_);
+			}
+		}]);
+		return DragAutoScroll;
+	}(State);
+
+	/**
+  * State definition.
+  * @type {!Object}
+  * @static
+  */
+
+
+	DragAutoScroll.STATE = {
+		/**
+   * The delay in ms before an element is scrolled automatically.
+   * @type {number}
+   * @default 200
+   */
+		delay: {
+			validator: core.isNumber,
+			value: 50
+		},
+
+		/**
+   * The maximum distance the mouse needs to be from an element before
+   * it will be scrolled automatically.
+   * @type {number}
+   * @default 10
+   */
+		maxDistance: {
+			validator: core.isNumber,
+			value: 20
+		},
+
+		/**
+   * The number of pixels that will be scrolled each time.
+   * @type {number}
+   * @default 10
+   */
+		speed: {
+			validator: core.isNumber,
+			value: 20
+		}
+	};
+
+	this['metal']['DragAutoScroll'] = DragAutoScroll;
+}).call(this);
+'use strict';
+
+(function () {
+	var dom = this['metal']['dom'];
+	var EventEmitter = this['metalNamed']['events']['EventEmitter'];
+	var EventHandler = this['metalNamed']['events']['EventHandler'];
+	var Position = this['metal']['position'];
+
+	/**
+  * Helper called by the `Drag` instance that emits an event whenever
+  * the scroll position of the given containers change.
+  */
+
+	var DragScrollDelta = function (_EventEmitter) {
+		babelHelpers.inherits(DragScrollDelta, _EventEmitter);
+
+		/**
+   * @inheritDoc
+   */
+		function DragScrollDelta() {
+			babelHelpers.classCallCheck(this, DragScrollDelta);
+
+			/**
+    * `EventHandler` for the scroll events.
+    * @type {EventHandler}
+    * @protected
+    */
+			var _this = babelHelpers.possibleConstructorReturn(this, (DragScrollDelta.__proto__ || Object.getPrototypeOf(DragScrollDelta)).call(this));
+
+			_this.handler_ = new EventHandler();
+
+			/**
+    * The scroll positions for the scroll elements that are being listened to.
+    * @type {Array}
+    * @protected
+    */
+			_this.scrollPositions_ = [];
+			return _this;
+		}
+
+		/**
+   * @inheritDoc
+   */
+
+
+		babelHelpers.createClass(DragScrollDelta, [{
+			key: 'disposeInternal',
+			value: function disposeInternal() {
+				babelHelpers.get(DragScrollDelta.prototype.__proto__ || Object.getPrototypeOf(DragScrollDelta.prototype), 'disposeInternal', this).call(this);
+				this.stop();
+				this.handler_ = null;
+			}
+
+			/**
+    * Handles a "scroll" event, emitting a "scrollDelta" event with the
+    * difference between the previous and new values.
+    * @param {number} index
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleScroll_',
+			value: function handleScroll_(index, event) {
+				var newPosition = {
+					scrollLeft: Position.getScrollLeft(event.currentTarget),
+					scrollTop: Position.getScrollTop(event.currentTarget)
+				};
+				var position = this.scrollPositions_[index];
+				this.scrollPositions_[index] = newPosition;
+
+				this.emit('scrollDelta', {
+					deltaX: newPosition.scrollLeft - position.scrollLeft,
+					deltaY: newPosition.scrollTop - position.scrollTop
+				});
+			}
+
+			/**
+    * Starts listening to scroll changes on the given elements that contain
+    * the current drag node.
+    * @param {!Element} dragNode
+    * @param {!Array<!Element>} scrollContainers
+    */
+
+		}, {
+			key: 'start',
+			value: function start(dragNode, scrollContainers) {
+				if (getComputedStyle(dragNode).position === 'fixed') {
+					// If the drag node's position is "fixed", then its coordinates don't need to
+					// be updated when parents are scrolled.
+					return;
+				}
+
+				for (var i = 0; i < scrollContainers.length; i++) {
+					if (dom.contains(scrollContainers[i], dragNode)) {
+						this.scrollPositions_.push({
+							scrollLeft: Position.getScrollLeft(scrollContainers[i]),
+							scrollTop: Position.getScrollTop(scrollContainers[i])
+						});
+
+						var index = this.scrollPositions_.length - 1;
+						this.handler_.add(dom.on(scrollContainers[i], 'scroll', this.handleScroll_.bind(this, index)));
+					}
+				}
+			}
+
+			/**
+    * Stops listening to scroll changes.
+    */
+
+		}, {
+			key: 'stop',
+			value: function stop() {
+				this.handler_.removeAllListeners();
+				this.scrollPositions_ = [];
+			}
+		}]);
+		return DragScrollDelta;
+	}(EventEmitter);
+
+	this['metal']['DragScrollDelta'] = DragScrollDelta;
+}).call(this);
+'use strict';
+
+(function () {
+	var dom = this['metal']['dom'];
+
+	/**
+  * Helper called by the `Drag` instance that creates a shim element
+  * for attaching event listeners instead of attaching them to the
+  * document. Helpful when dragging over iframes.
+  */
+
+	var DragShim = function () {
+		function DragShim() {
+			babelHelpers.classCallCheck(this, DragShim);
+		}
+
+		babelHelpers.createClass(DragShim, null, [{
+			key: 'attachDocListeners',
+
+			/**
+    * Attaches a listener for the document. If `useShim` is true, a
+    * shim element covering the whole document will be created and
+    * the listener will be attached to it instead.
+    * @param {boolean} useShim
+    * @param {!Object<string, !function()>} listeners
+    * @return {!Array<!EventHandle>}
+    * @static
+    */
+			value: function attachDocListeners(useShim, listeners) {
+				var element = document;
+				if (useShim) {
+					element = DragShim.getDocShim();
+					element.style.display = 'block';
+				}
+				var eventTypes = Object.keys(listeners);
+				return eventTypes.map(function (type) {
+					var isTouch = type.substr(0, 5) === 'touch';
+					return dom.on(isTouch ? document : element, type, listeners[type]);
+				});
+			}
+
+			/**
+    * Gets the document's shim element, creating it when called for the first time.
+    * @return {!Element}
+    * @static
+    */
+
+		}, {
+			key: 'getDocShim',
+			value: function getDocShim() {
+				if (!DragShim.docShim_) {
+					DragShim.docShim_ = document.createElement('div');
+					DragShim.docShim_.className = 'shim';
+					DragShim.docShim_.style.position = 'fixed';
+					DragShim.docShim_.style.top = 0;
+					DragShim.docShim_.style.left = 0;
+					DragShim.docShim_.style.width = '100%';
+					DragShim.docShim_.style.height = '100%';
+					DragShim.docShim_.style.display = 'none';
+					DragShim.docShim_.style.opacity = 0;
+					DragShim.docShim_.style.zIndex = 9999;
+					dom.enterDocument(DragShim.docShim_);
+				}
+				return DragShim.docShim_;
+			}
+
+			/**
+    * Hides the document's shim element.
+    * @static
+    */
+
+		}, {
+			key: 'hideDocShim',
+			value: function hideDocShim() {
+				DragShim.getDocShim().style.display = 'none';
+			}
+
+			/**
+    * Resets `DragShim`, removing the shim element from the document
+    * and clearing its variable so it can be created again.
+    * @static
+    */
+
+		}, {
+			key: 'reset',
+			value: function reset() {
+				if (DragShim.docShim_) {
+					dom.exitDocument(DragShim.docShim_);
+					DragShim.docShim_ = null;
+				}
+			}
+		}]);
+		return DragShim;
+	}();
+
+	/**
+  * The shim element. This is only created when necessary.
+  * @type {Element}
+  * @protected
+  * @static
+  */
+
+
+	DragShim.docShim_ = null;
+
+	this['metal']['DragShim'] = DragShim;
+}).call(this);
+'use strict';
+
+(function () {
+	var core = this['metalNamed']['metal']['core'];
+	var object = this['metalNamed']['metal']['object'];
+	var dom = this['metal']['dom'];
+	var DragAutoScroll = this['metal']['DragAutoScroll'];
+	var DragScrollDelta = this['metal']['DragScrollDelta'];
+	var DragShim = this['metal']['DragShim'];
+	var EventHandler = this['metalNamed']['events']['EventHandler'];
+	var Position = this['metal']['position'];
+	var State = this['metal']['state'];
+
+	/**
+  * Responsible for making elements draggable. Handles all the logic
+  * for dragging elements. Dropping is handled by `DragDrop`.
+  * @extends {State}
+  */
+
+	var Drag = function (_State) {
+		babelHelpers.inherits(Drag, _State);
+
+		/**
+   * @inheritDoc
+   */
+		function Drag(opt_config) {
+			babelHelpers.classCallCheck(this, Drag);
+
+			/**
+    * The drag placeholder that is active at the moment.
+    * @type {Element}
+    * @protected
+    */
+			var _this = babelHelpers.possibleConstructorReturn(this, (Drag.__proto__ || Object.getPrototypeOf(Drag)).call(this, opt_config));
+
+			_this.activeDragPlaceholder_ = null;
+
+			/**
+    * The drag source that is active at the moment.
+    * @type {Element}
+    * @protected
+    */
+			_this.activeDragSource_ = null;
+
+			/**
+    * The distance that has been dragged.
+    * @type {number}
+    * @protected
+    */
+			_this.distanceDragged_ = 0;
+
+			/**
+    * Flag indicating if one of the sources are being dragged.
+    * @type {boolean}
+    * @protected
+    */
+			_this.dragging_ = false;
+
+			/**
+    * The `EventHandler` instance that holds events that keep track of the drag action.
+    * @type {!EventHandler}
+    * @protected
+    */
+			_this.dragHandler_ = new EventHandler();
+
+			/**
+    * `DragScrollDelta` instance.
+    * @type {!DragScrollDelta}
+    * @protected
+    */
+			_this.dragScrollDelta_ = new DragScrollDelta();
+
+			/**
+    * The current x and y positions of the mouse (or null if not dragging).
+    * @type {{x: number, y: number}}
+    * @protected
+    */
+			_this.mousePos_ = null;
+
+			/**
+    * The distance between the mouse position and the dragged source position
+    * (or null if not dragging).
+    * @type {{x: number, y: number}}
+    * @protected
+    */
+			_this.mouseSourceDelta_ = null;
+
+			/**
+    * The `EventHandler` instance that holds events for the source (or sources).
+    * @type {!EventHandler}
+    * @protected
+    */
+			_this.sourceHandler_ = new EventHandler();
+
+			/**
+    * The current region values of the element being dragged, relative to
+    * the document (or null if not dragging).
+    * @type {Object}
+    * @protected
+    */
+			_this.sourceRegion_ = null;
+
+			/**
+    * The current x and y positions of the element being dragged relative to its
+    * `offsetParent`, or to the viewport if there's no `offsetParent`
+    * (or null if not dragging).
+    * @type {{x: number, y: number}}
+    * @protected
+    */
+			_this.sourceRelativePos_ = null;
+
+			_this.attachSourceEvents_();
+			_this.on(Drag.Events.DRAG, _this.defaultDragFn_, true);
+			_this.on(Drag.Events.END, _this.defaultEndFn_, true);
+			_this.on('sourcesChanged', _this.handleSourcesChanged_.bind(_this));
+			_this.on('containerChanged', _this.handleContainerChanged_.bind(_this));
+			_this.dragScrollDelta_.on('scrollDelta', _this.handleScrollDelta_.bind(_this));
+			dom.on(document, 'keydown', _this.handleKeyDown_.bind(_this));
+			return _this;
+		}
+
+		/**
+   * Attaches the necessary events to the source (or sources).
+   * @protected
+   */
+
+
+		babelHelpers.createClass(Drag, [{
+			key: 'attachSourceEvents_',
+			value: function attachSourceEvents_() {
+				var toAttach = {
+					keydown: this.handleSourceKeyDown_.bind(this),
+					mousedown: this.handleDragStartEvent_.bind(this),
+					touchstart: this.handleDragStartEvent_.bind(this)
+				};
+				var eventTypes = Object.keys(toAttach);
+				for (var i = 0; i < eventTypes.length; i++) {
+					var listenerFn = toAttach[eventTypes[i]];
+					if (core.isString(this.sources)) {
+						this.sourceHandler_.add(dom.delegate(this.container, eventTypes[i], this.sources, listenerFn));
+					} else {
+						this.sourceHandler_.add(dom.on(this.sources, eventTypes[i], listenerFn));
+					}
+				}
+			}
+
+			/**
+    * Builds the object with data to be passed to a drag event.
+    * @return {!Object}
+    * @protected
+    */
+
+		}, {
+			key: 'buildEventObject_',
+			value: function buildEventObject_() {
+				return {
+					placeholder: this.activeDragPlaceholder_,
+					source: this.activeDragSource_,
+					relativeX: this.sourceRelativePos_.x,
+					relativeY: this.sourceRelativePos_.y,
+					x: this.sourceRegion_.left,
+					y: this.sourceRegion_.top
+				};
+			}
+
+			/**
+    * Calculates the initial positions for the drag action.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'calculateInitialPosition_',
+			value: function calculateInitialPosition_(event) {
+				this.sourceRegion_ = object.mixin({}, Position.getRegion(this.activeDragSource_, true));
+				this.sourceRelativePos_ = {
+					x: this.activeDragSource_.offsetLeft,
+					y: this.activeDragSource_.offsetTop
+				};
+				if (core.isDef(event.clientX)) {
+					this.mousePos_ = {
+						x: event.clientX,
+						y: event.clientY
+					};
+					this.mouseSourceDelta_ = {
+						x: this.sourceRegion_.left - this.mousePos_.x,
+						y: this.sourceRegion_.top - this.mousePos_.y
+					};
+				}
+			}
+
+			/**
+    * Checks if the given event can start a drag operation.
+    * @param {!Event} event
+    * @return {boolean}
+    * @protected
+    */
+
+		}, {
+			key: 'canStartDrag_',
+			value: function canStartDrag_(event) {
+				return !this.disabled && (!core.isDef(event.button) || event.button === 0) && !this.isDragging() && this.isWithinHandle_(event.target);
+			}
+
+			/**
+    * Resets all variables to their initial values and detaches drag listeners.
+    * @protected
+    */
+
+		}, {
+			key: 'cleanUpAfterDragging_',
+			value: function cleanUpAfterDragging_() {
+				if (this.activeDragPlaceholder_) {
+					this.activeDragPlaceholder_.setAttribute('aria-grabbed', 'false');
+					dom.removeClasses(this.activeDragPlaceholder_, this.draggingClass);
+					if (this.dragPlaceholder === Drag.Placeholder.CLONE) {
+						dom.exitDocument(this.activeDragPlaceholder_);
+					}
+				}
+				this.activeDragPlaceholder_ = null;
+				this.activeDragSource_ = null;
+				this.sourceRegion_ = null;
+				this.sourceRelativePos_ = null;
+				this.mousePos_ = null;
+				this.mouseSourceDelta_ = null;
+				this.dragging_ = false;
+				this.dragHandler_.removeAllListeners();
+			}
+
+			/**
+    * Clones the active drag source and adds the clone to the document.
+    * @return {!Element}
+    * @protected
+    */
+
+		}, {
+			key: 'cloneActiveDrag_',
+			value: function cloneActiveDrag_() {
+				var placeholder = this.activeDragSource_.cloneNode(true);
+				placeholder.style.position = 'absolute';
+				placeholder.style.left = this.sourceRelativePos_.x + 'px';
+				placeholder.style.top = this.sourceRelativePos_.y + 'px';
+				dom.append(this.activeDragSource_.parentNode, placeholder);
+				return placeholder;
+			}
+
+			/**
+    * Constrains the given region according to the current state configuration.
+    * @param {!Object} region
+    * @protected
+    */
+
+		}, {
+			key: 'constrain_',
+			value: function constrain_(region) {
+				this.constrainToSteps_(region);
+				this.constrainToRegion_(region);
+				this.constrainToAxis_(region);
+			}
+
+			/**
+    * Constrains the given region according to the chosen drag axis, if any.
+    * @param {!Object} region
+    * @protected
+    */
+
+		}, {
+			key: 'constrainToAxis_',
+			value: function constrainToAxis_(region) {
+				if (this.axis === 'x') {
+					region.top = this.sourceRegion_.top;
+					region.bottom = this.sourceRegion_.bottom;
+				} else if (this.axis === 'y') {
+					region.left = this.sourceRegion_.left;
+					region.right = this.sourceRegion_.right;
+				}
+			}
+
+			/**
+    * Constrains the given region within the region defined by the `constrain` state.
+    * @param {!Object} region
+    * @protected
+    */
+
+		}, {
+			key: 'constrainToRegion_',
+			value: function constrainToRegion_(region) {
+				var constrain = this.constrain;
+				if (!constrain) {
+					return;
+				}
+
+				if (core.isFunction(constrain)) {
+					object.mixin(region, constrain(region));
+				} else {
+					if (core.isElement(constrain)) {
+						constrain = Position.getRegion(constrain, true);
+					}
+					if (region.left < constrain.left) {
+						region.left = constrain.left;
+					} else if (region.right > constrain.right) {
+						region.left -= region.right - constrain.right;
+					}
+					if (region.top < constrain.top) {
+						region.top = constrain.top;
+					} else if (region.bottom > constrain.bottom) {
+						region.top -= region.bottom - constrain.bottom;
+					}
+					region.right = region.left + region.width;
+					region.bottom = region.top + region.height;
+				}
+			}
+
+			/**
+    * Constrains the given region to change according to the `steps` state.
+    * @param {!Object} region
+    * @protected
+    */
+
+		}, {
+			key: 'constrainToSteps_',
+			value: function constrainToSteps_(region) {
+				var deltaX = region.left - this.sourceRegion_.left;
+				var deltaY = region.top - this.sourceRegion_.top;
+				region.left -= deltaX % this.steps.x;
+				region.right = region.left + region.width;
+				region.top -= deltaY % this.steps.y;
+				region.bottom = region.top + region.height;
+			}
+
+			/**
+    * Creates the active drag placeholder, unless it already exists.
+    * @protected
+    */
+
+		}, {
+			key: 'createActiveDragPlaceholder_',
+			value: function createActiveDragPlaceholder_() {
+				var dragPlaceholder = this.dragPlaceholder;
+				if (dragPlaceholder === Drag.Placeholder.CLONE) {
+					this.activeDragPlaceholder_ = this.cloneActiveDrag_();
+				} else if (core.isElement(dragPlaceholder)) {
+					this.activeDragPlaceholder_ = dragPlaceholder;
+				} else {
+					this.activeDragPlaceholder_ = this.activeDragSource_;
+				}
+			}
+
+			/**
+    * The default behavior for the `Drag.Events.DRAG` event. Can be prevented
+    * by calling the `preventDefault` function on the event's facade. Moves
+    * the placeholder to the new calculated source position.
+    * @protected
+    */
+
+		}, {
+			key: 'defaultDragFn_',
+			value: function defaultDragFn_() {
+				this.moveToPosition_(this.activeDragPlaceholder_);
+			}
+
+			/**
+    * The default behavior for the `Drag.Events.END` event. Can be prevented
+    * by calling the `preventDefault` function on the event's facade. Moves
+    * the source element to the final calculated position.
+    * @protected
+    */
+
+		}, {
+			key: 'defaultEndFn_',
+			value: function defaultEndFn_() {
+				this.moveToPosition_(this.activeDragSource_);
+			}
+
+			/**
+    * @inheritDoc
+    */
+
+		}, {
+			key: 'disposeInternal',
+			value: function disposeInternal() {
+				this.cleanUpAfterDragging_();
+				this.dragHandler_ = null;
+				this.dragScrollDelta_.dispose();
+				this.dragScrollDelta_ = null;
+				this.sourceHandler_.removeAllListeners();
+				this.sourceHandler_ = null;
+				babelHelpers.get(Drag.prototype.__proto__ || Object.getPrototypeOf(Drag.prototype), 'disposeInternal', this).call(this);
+			}
+
+			/**
+    * Gets the active drag source.
+    * @return {Element}
+    */
+
+		}, {
+			key: 'getActiveDrag',
+			value: function getActiveDrag() {
+				return this.activeDragSource_;
+			}
+
+			/**
+    * Handles events that can end a drag action, like "mouseup" and "touchend".
+    * Triggered when the mouse drag action ends.
+    * @protected
+    */
+
+		}, {
+			key: 'handleDragEndEvent_',
+			value: function handleDragEndEvent_() {
+				if (this.autoScroll) {
+					this.autoScroll.stop();
+				}
+				this.dragScrollDelta_.stop();
+				DragShim.hideDocShim();
+				this.emit(Drag.Events.END, this.buildEventObject_());
+				this.cleanUpAfterDragging_();
+			}
+
+			/**
+    * Handles events that can move a draggable element, like "mousemove" and "touchmove".
+    * Tracks the movement on the screen to update the drag action.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleDragMoveEvent_',
+			value: function handleDragMoveEvent_(event) {
+				var position = event.targetTouches ? event.targetTouches[0] : event;
+				var distanceX = position.clientX - this.mousePos_.x;
+				var distanceY = position.clientY - this.mousePos_.y;
+				this.mousePos_.x = position.clientX;
+				this.mousePos_.y = position.clientY;
+				if (!this.isDragging() && !this.hasReachedMinimumDistance_(distanceX, distanceY)) {
+					return;
+				}
+
+				if (!this.isDragging()) {
+					this.startDragging_(event);
+					this.dragScrollDelta_.start(this.activeDragPlaceholder_, this.scrollContainers);
+				}
+				if (this.autoScroll) {
+					this.autoScroll.scroll(this.scrollContainers, this.mousePos_.x, this.mousePos_.y);
+				}
+				this.updatePositionFromMouse();
+			}
+
+			/**
+    * Handles events that can start a drag action, like "mousedown" and "touchstart".
+    * When this is triggered and the sources were not already being dragged, more
+    * listeners will be attached to keep track of the drag action.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleDragStartEvent_',
+			value: function handleDragStartEvent_(event) {
+				this.activeDragSource_ = event.delegateTarget || event.currentTarget;
+
+				if (this.canStartDrag_(event)) {
+					this.calculateInitialPosition_(event.targetTouches ? event.targetTouches[0] : event);
+					event.preventDefault();
+					if (event.type === 'keydown') {
+						this.startDragging_(event);
+					} else {
+						this.dragHandler_.add.apply(this.dragHandler_, DragShim.attachDocListeners(this.useShim, {
+							mousemove: this.handleDragMoveEvent_.bind(this),
+							touchmove: this.handleDragMoveEvent_.bind(this),
+							mouseup: this.handleDragEndEvent_.bind(this),
+							touchend: this.handleDragEndEvent_.bind(this)
+						}));
+						this.distanceDragged_ = 0;
+					}
+				}
+			}
+
+			/**
+    * Handles a `keydown` event on the document. Ends the drag if ESC was the pressed key.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleKeyDown_',
+			value: function handleKeyDown_(event) {
+				if (event.keyCode === 27 && this.isDragging()) {
+					this.handleDragEndEvent_();
+				}
+			}
+
+			/**
+    * Handles a "scrollDelta" event. Updates the position data for the source,
+    * as well as the placeholder's position on the screen when "move" is set to true.
+    * @param {!Object} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleScrollDelta_',
+			value: function handleScrollDelta_(event) {
+				this.mouseSourceDelta_.x += event.deltaX;
+				this.mouseSourceDelta_.y += event.deltaY;
+				this.updatePositionFromMouse();
+			}
+
+			/**
+    * Handles a `keydown` event from `KeyboardDrag`. Does the appropriate drag action
+    * for the pressed key.
+    * @param {!Object} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleSourceKeyDown_',
+			value: function handleSourceKeyDown_(event) {
+				if (this.isDragging()) {
+					var currentTarget = event.delegateTarget || event.currentTarget;
+					if (currentTarget !== this.activeDragSource_) {
+						return;
+					}
+					if (event.keyCode >= 37 && event.keyCode <= 40) {
+						// Arrow keys during drag move the source.
+						var deltaX = 0;
+						var deltaY = 0;
+						var speedX = this.keyboardSpeed >= this.steps.x ? this.keyboardSpeed : this.steps.x;
+						var speedY = this.keyboardSpeed >= this.steps.y ? this.keyboardSpeed : this.steps.y;
+						if (event.keyCode === 37) {
+							deltaX -= speedX;
+						} else if (event.keyCode === 38) {
+							deltaY -= speedY;
+						} else if (event.keyCode === 39) {
+							deltaX += speedX;
+						} else {
+							deltaY += speedY;
+						}
+						this.updatePositionFromDelta(deltaX, deltaY);
+						event.preventDefault();
+					} else if (event.keyCode === 13 || event.keyCode === 32 || event.keyCode === 27) {
+						// Enter, space or esc during drag will end it.
+						this.handleDragEndEvent_();
+					}
+				} else if (event.keyCode === 13 || event.keyCode === 32) {
+					// Enter or space will start the drag action.
+					this.handleDragStartEvent_(event);
+				}
+			}
+
+			/**
+    * Triggers when the `container` state changes. Detaches events attached to the
+    * previous container and attaches them to the new value instead.
+    * @protected
+    */
+
+		}, {
+			key: 'handleContainerChanged_',
+			value: function handleContainerChanged_() {
+				if (core.isString(this.sources)) {
+					this.sourceHandler_.removeAllListeners();
+					this.attachSourceEvents_();
+				}
+				if (this.prevScrollContainersSelector_) {
+					this.scrollContainers = this.prevScrollContainersSelector_;
+				}
+			}
+
+			/**
+    * Triggers when the `sources` state changes. Detaches events attached to the
+    * previous sources and attaches them to the new value instead.
+    * @protected
+    */
+
+		}, {
+			key: 'handleSourcesChanged_',
+			value: function handleSourcesChanged_() {
+				this.sourceHandler_.removeAllListeners();
+				this.attachSourceEvents_();
+			}
+
+			/**
+    * Checks if the minimum distance for dragging has been reached after
+    * adding the given values.
+    * @param {number} distanceX
+    * @param {number} distanceY
+    * @return {boolean}
+    * @protected
+    */
+
+		}, {
+			key: 'hasReachedMinimumDistance_',
+			value: function hasReachedMinimumDistance_(distanceX, distanceY) {
+				this.distanceDragged_ += Math.abs(distanceX) + Math.abs(distanceY);
+				return this.distanceDragged_ >= this.minimumDragDistance;
+			}
+
+			/**
+    * Checks if one of the sources are being dragged.
+    * @return {boolean}
+    */
+
+		}, {
+			key: 'isDragging',
+			value: function isDragging() {
+				return this.dragging_;
+			}
+
+			/**
+    * Checks if the given element is within a valid handle.
+    * @param {!Element} element
+    * @protected
+    */
+
+		}, {
+			key: 'isWithinHandle_',
+			value: function isWithinHandle_(element) {
+				var handles = this.handles;
+				if (!handles) {
+					return true;
+				} else if (core.isString(handles)) {
+					return dom.match(element, handles + ', ' + handles + ' *');
+				} else {
+					return dom.contains(handles, element);
+				}
+			}
+
+			/**
+    * Moves the given element to the current source coordinates.
+    * @param {!Element} element
+    * @protected
+    */
+
+		}, {
+			key: 'moveToPosition_',
+			value: function moveToPosition_(element) {
+				element.style.left = this.sourceRelativePos_.x + 'px';
+				element.style.top = this.sourceRelativePos_.y + 'px';
+			}
+
+			/**
+    * Setter for the `autoScroll` state key.
+    * @param {*} val
+    * @return {!DragAutoScroll}
+    */
+
+		}, {
+			key: 'setterAutoScrollFn_',
+			value: function setterAutoScrollFn_(val) {
+				if (val !== false) {
+					return new DragAutoScroll(val);
+				}
+			}
+
+			/**
+    * Setter for the `constrain` state key.
+    * @param {!Element|Object|string} val
+    * @return {!Element|Object}
+    * @protected
+    */
+
+		}, {
+			key: 'setterConstrainFn',
+			value: function setterConstrainFn(val) {
+				if (core.isString(val)) {
+					val = dom.toElement(val);
+				}
+				return val;
+			}
+
+			/**
+    * Sets the `scrollContainers` state key.
+    * @param {Element|string} val
+    * @return {!Array<!Element>}
+    * @protected
+    */
+
+		}, {
+			key: 'setterScrollContainersFn_',
+			value: function setterScrollContainersFn_(val) {
+				this.prevScrollContainersSelector_ = core.isString(val) ? val : null;
+				var elements = this.toElements_(val);
+				elements.push(document);
+				return elements;
+			}
+
+			/**
+    * Starts dragging the selected source.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'startDragging_',
+			value: function startDragging_(event) {
+				this.dragging_ = true;
+				this.createActiveDragPlaceholder_();
+				dom.addClasses(this.activeDragPlaceholder_, this.draggingClass);
+				this.activeDragPlaceholder_.setAttribute('aria-grabbed', 'true');
+				this.emit(Drag.Events.START, {
+					originalEvent: event
+				});
+			}
+
+			/**
+    * Converts the given element or selector into an array of elements.
+    * @param {Element|string} elementOrSelector
+    * @return {!Array<!Element>}
+    * @protected
+    */
+
+		}, {
+			key: 'toElements_',
+			value: function toElements_(elementOrSelector) {
+				if (core.isString(elementOrSelector)) {
+					var matched = this.container.querySelectorAll(elementOrSelector);
+					return Array.prototype.slice.call(matched, 0);
+				} else if (elementOrSelector) {
+					return [elementOrSelector];
+				} else {
+					return [];
+				}
+			}
+
+			/**
+    * Updates the dragged element's position using the given calculated region.
+    * @param {!Object} newRegion
+    */
+
+		}, {
+			key: 'updatePosition',
+			value: function updatePosition(newRegion) {
+				this.constrain_(newRegion);
+				var deltaX = newRegion.left - this.sourceRegion_.left;
+				var deltaY = newRegion.top - this.sourceRegion_.top;
+				if (deltaX !== 0 || deltaY !== 0) {
+					this.sourceRegion_ = newRegion;
+					this.sourceRelativePos_.x += deltaX;
+					this.sourceRelativePos_.y += deltaY;
+					this.emit(Drag.Events.DRAG, this.buildEventObject_());
+				}
+			}
+
+			/**
+    * Updates the dragged element's position, moving its placeholder if `move`
+    * is set to true.
+    * @param {number} deltaX
+    * @param {number} deltaY
+    */
+
+		}, {
+			key: 'updatePositionFromDelta',
+			value: function updatePositionFromDelta(deltaX, deltaY) {
+				var newRegion = object.mixin({}, this.sourceRegion_);
+				newRegion.left += deltaX;
+				newRegion.right += deltaX;
+				newRegion.top += deltaY;
+				newRegion.bottom += deltaY;
+				this.updatePosition(newRegion);
+			}
+
+			/**
+    * Updates the dragged element's position, according to the current mouse position.
+    */
+
+		}, {
+			key: 'updatePositionFromMouse',
+			value: function updatePositionFromMouse() {
+				var newRegion = {
+					height: this.sourceRegion_.height,
+					left: this.mousePos_.x + this.mouseSourceDelta_.x,
+					top: this.mousePos_.y + this.mouseSourceDelta_.y,
+					width: this.sourceRegion_.width
+				};
+				newRegion.right = newRegion.left + newRegion.width;
+				newRegion.bottom = newRegion.top + newRegion.height;
+				this.updatePosition(newRegion);
+			}
+
+			/**
+    * Validates the given value, making sure that it's either an element or a string.
+    * @param {*} val
+    * @return {boolean}
+    * @protected
+    */
+
+		}, {
+			key: 'validateElementOrString_',
+			value: function validateElementOrString_(val) {
+				return core.isString(val) || core.isElement(val);
+			}
+
+			/**
+    * Validates the value of the `constrain` state.
+    * @param {*} val
+    * @return {boolean}
+    * @protected
+    */
+
+		}, {
+			key: 'validatorConstrainFn',
+			value: function validatorConstrainFn(val) {
+				return core.isString(val) || core.isObject(val);
+			}
+		}]);
+		return Drag;
+	}(State);
+
+	/**
+  * State definition.
+  * @type {!Object}
+  * @static
+  */
+
+
+	Drag.STATE = {
+		/**
+   * Configuration object for the `DragAutoScroll` instance that will be used for
+   * automatically scrolling the elements in `scrollContainers` during drag when
+   * the mouse is near their boundaries. If set to `false`, auto scrolling will be
+   * disabled (default).
+   * @type {!Object|boolean}
+   * @default false
+   */
+		autoScroll: {
+			setter: 'setterAutoScrollFn_',
+			value: false,
+			writeOnce: true
+		},
+
+		/**
+   * The axis that allows dragging. Can be set to just x, just y or both (default).
+   * @type {string}
+   */
+		axis: {
+			validator: core.isString
+		},
+
+		/**
+   * Object with the boundaries, that the dragged element should not leave
+   * while being dragged. If not set, the element is free to be dragged
+   * to anywhere on the page. Can be either already an object with the
+   * boundaries relative to the document, or an element to use the boundaries
+   * from, or even a selector for finding that element.
+   * @type {!Element|Object|function()|string}
+   */
+		constrain: {
+			setter: 'setterConstrainFn',
+			validator: 'validatorConstrainFn'
+		},
+
+		/**
+   * An element that contains all sources, targets and scroll containers. This
+   * will be used when delegate events are attached or when looking for elements
+   * by selector. Defaults to `document`.
+   * @type {!Element|string}
+   * @default document
+   */
+		container: {
+			setter: dom.toElement,
+			validator: 'validateElementOrString_',
+			value: document
+		},
+
+		/**
+   * Flag indicating if drag operations are disabled. When set to true, it
+   * dragging won't work.
+   * @type {boolean}
+   * @default false
+   */
+		disabled: {
+			validator: core.isBoolean,
+			value: false
+		},
+
+		/**
+   * The CSS class that should be added to the node being dragged.
+   * @type {string}
+   * @default 'dragging'
+   */
+		draggingClass: {
+			validator: core.isString,
+			value: 'dragging'
+		},
+
+		/**
+   * The placeholder element that should be moved during drag. Can be either
+   * an element or the "clone" string, indicating that a clone of the source
+   * being dragged should be used. If nothing is set, the original source element
+   * will be used.
+   * @type {Element|?string}
+   */
+		dragPlaceholder: {
+			validator: 'validateElementOrString_'
+		},
+
+		/**
+   * Elements inside the source that should be the drag handles. Can be
+   * either a single element or a selector for multiple elements.
+   * @type {Element|?string}
+   */
+		handles: {
+			validator: 'validateElementOrString_'
+		},
+
+		/**
+   * The number of pixels that the source should move when dragged via
+   * the keyboard controls.
+   * @default 10
+   */
+		keyboardSpeed: {
+			validator: core.isNumber,
+			value: 10
+		},
+
+		/**
+   * The minimum distance, in pixels, that the mouse needs to move before
+   * the action is considered a drag.
+   * @type {number}
+   * @default 5
+   */
+		minimumDragDistance: {
+			validator: core.isNumber,
+			value: 5,
+			writeOnce: true
+		},
+
+		/**
+   * Elements with scroll, besides the document, that contain any of the given
+   * sources. Can be either a single element or a selector for multiple elements.
+   * @type {Element|string}
+   */
+		scrollContainers: {
+			setter: 'setterScrollContainersFn_',
+			validator: 'validateElementOrString_'
+		},
+
+		/**
+   * Elements that should be draggable. Can be either a single element
+   * or a selector for multiple elements.
+   * @type {!Element|string}
+   */
+		sources: {
+			validator: 'validateElementOrString_'
+		},
+
+		/**
+   * The number of pixels that the source element should move at a time,
+   * for each axis. When set to a value higher than 1, dragging won't be
+   * a continuous movement, since the source element will move by multiple
+   * pixels on each step.
+   * @type {!{x: number, y: number}}
+   */
+		steps: {
+			validator: core.isObject,
+			valueFn: function valueFn() {
+				return {
+					x: 1,
+					y: 1
+				};
+			}
+		},
+
+		/**
+   * Flag indicating if a shim should be used for capturing document events.
+   * This is important for allowing dragging nodes over iframes. If false,
+   * events will be listened in the document itself instead.
+   * @type {boolean}
+   * @default true
+   */
+		useShim: {
+			value: true
+		}
+	};
+
+	/**
+  * Holds the names of events that can be emitted by `Drag`.
+  * @type {!Object}
+  * @static
+  */
+	Drag.Events = {
+		DRAG: 'drag',
+		END: 'end',
+		START: 'start'
+	};
+
+	/**
+  * Holds the values that can be passed to the `dragPlaceholder` state key.
+  * @type {!Object}
+  * @static
+  */
+	Drag.Placeholder = {
+		CLONE: 'clone'
+	};
+
+	this['metal']['Drag'] = Drag;
+}).call(this);
+'use strict';
+
+(function () {
+	var array = this['metalNamed']['metal']['array'];
+	var core = this['metalNamed']['metal']['core'];
+	var object = this['metalNamed']['metal']['object'];
+	var dom = this['metal']['dom'];
+	var Drag = this['metal']['Drag'];
+	var Position = this['metal']['position'];
+
+	/**
+  * Adds the functionality of dropping dragged elements to specific
+  * targets to the `Drag` class.
+  * @extends {Drag}
+  */
+	var DragDrop = function (_Drag) {
+		babelHelpers.inherits(DragDrop, _Drag);
+
+		/**
+   * @inheritDoc
+   */
+		function DragDrop(opt_config) {
+			babelHelpers.classCallCheck(this, DragDrop);
+
+			/**
+    * The currently active targets, that is, the ones that the dragged source is over.
+    * @type {!Array<!Element>}
+    * @protected
+    */
+			var _this = babelHelpers.possibleConstructorReturn(this, (DragDrop.__proto__ || Object.getPrototypeOf(DragDrop)).call(this, opt_config));
+
+			_this.activeTargets_ = [];
+			return _this;
+		}
+
+		/**
+   * Adds a target to this `DragDrop` instance.
+   * @param {!Element} target
+   */
+
+
+		babelHelpers.createClass(DragDrop, [{
+			key: 'addTarget',
+			value: function addTarget(target) {
+				this.targets.push(target);
+				this.targets = this.targets;
+			}
+
+			/**
+    * Overrides the original method from `Drag` to include the target on the event object.
+    * @return {!Object}
+    * @protected
+    * @override
+    */
+
+		}, {
+			key: 'buildEventObject_',
+			value: function buildEventObject_() {
+				var obj = babelHelpers.get(DragDrop.prototype.__proto__ || Object.getPrototypeOf(DragDrop.prototype), 'buildEventObject_', this).call(this);
+				obj.target = this.activeTargets_[0];
+				obj.allActiveTargets = this.activeTargets_;
+				return obj;
+			}
+
+			/**
+    * @inheritDoc
+    */
+
+		}, {
+			key: 'cleanUpAfterDragging_',
+			value: function cleanUpAfterDragging_() {
+				babelHelpers.get(DragDrop.prototype.__proto__ || Object.getPrototypeOf(DragDrop.prototype), 'cleanUpAfterDragging_', this).call(this);
+				this.targets.forEach(function (target) {
+					return target.removeAttribute('aria-dropeffect');
+				});
+				if (this.activeTargets_.length) {
+					dom.removeClasses(this.activeTargets_[0], this.targetOverClass);
+				}
+				this.activeTargets_ = [];
+			}
+
+			/**
+    * Finds all targets that the dragged element is currently over.
+    * @return {!Array<!Element>} The current active targets.
+    * @protected
+    */
+
+		}, {
+			key: 'findAllActiveTargets_',
+			value: function findAllActiveTargets_() {
+				var activeTargets = [];
+				var mainRegion;
+				var sourceRegion = this.getSourceRegion_();
+				var targets = this.targets;
+				targets.forEach(function (target, index) {
+					var region = Position.getRegion(target);
+					if (targets[index] !== this.activeDragPlaceholder_ && Position.intersectRegion(region, sourceRegion)) {
+						if (!mainRegion || Position.insideRegion(mainRegion, region)) {
+							activeTargets = [targets[index]].concat(activeTargets);
+							mainRegion = region;
+						} else {
+							activeTargets.push(targets[index]);
+						}
+					}
+				}.bind(this));
+				return activeTargets;
+			}
+
+			/**
+    * Gets the active source's region, to be used when calculating which targets are active.
+    * @return {!Object}
+    * @protected
+    */
+
+		}, {
+			key: 'getSourceRegion_',
+			value: function getSourceRegion_() {
+				if (core.isDefAndNotNull(this.mousePos_)) {
+					var x = this.mousePos_.x;
+					var y = this.mousePos_.y;
+					return Position.makeRegion(y, 0, x, x, y, 0);
+				} else {
+					// We need to remove the scroll data from the region, since the other regions we'll
+					// be comparing to won't take that information into account.
+					var region = object.mixin({}, this.sourceRegion_);
+					region.left -= document.body.scrollLeft;
+					region.right -= document.body.scrollLeft;
+					region.top -= document.body.scrollTop;
+					region.bottom -= document.body.scrollTop;
+					return region;
+				}
+			}
+
+			/**
+    * Triggers when the `container` state changes. Overrides default method so
+    * it will also update `targets` when container changes.
+    * @param {!Object} data
+    * @param {!Object} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleContainerChanged_',
+			value: function handleContainerChanged_(data, event) {
+				babelHelpers.get(DragDrop.prototype.__proto__ || Object.getPrototypeOf(DragDrop.prototype), 'handleContainerChanged_', this).call(this, data, event);
+				if (this.prevTargetsSelector_) {
+					this.targets = this.prevTargetsSelector_;
+				}
+			}
+
+			/**
+    * Removes a target from this `DragDrop` instance.
+    * @param {!Element} target
+    */
+
+		}, {
+			key: 'removeTarget',
+			value: function removeTarget(target) {
+				array.remove(this.targets, target);
+				this.targets = this.targets;
+			}
+
+			/**
+    * Sets the `targets` state property.
+    * @param {Element|string} val
+    * @return {!Array<!Element>}
+    * @protected
+    */
+
+		}, {
+			key: 'setterTargetsFn_',
+			value: function setterTargetsFn_(val) {
+				this.prevTargetsSelector_ = core.isString(val) ? val : null;
+				return this.toElements_(val);
+			}
+
+			/**
+    * Overrides the original method from `Drag` to also set the "aria-dropeffect"
+    * attribute, if set, for all targets.
+    * @return {[type]} [description]
+    */
+
+		}, {
+			key: 'startDragging_',
+			value: function startDragging_() {
+				var _this2 = this;
+
+				if (this.ariaDropEffect) {
+					this.targets.forEach(function (target) {
+						return target.setAttribute('aria-dropeffect', _this2.ariaDropEffect);
+					});
+				}
+				babelHelpers.get(DragDrop.prototype.__proto__ || Object.getPrototypeOf(DragDrop.prototype), 'startDragging_', this).call(this);
+			}
+
+			/**
+    * Overrides original method from `Drag` to also be enable finding the target
+    * the dragged element is over at the new position.
+    * @param {number} deltaX
+    * @param {number} deltaY
+    * @override
+    */
+
+		}, {
+			key: 'updatePosition',
+			value: function updatePosition(deltaX, deltaY) {
+				babelHelpers.get(DragDrop.prototype.__proto__ || Object.getPrototypeOf(DragDrop.prototype), 'updatePosition', this).call(this, deltaX, deltaY);
+
+				var newTargets = this.findAllActiveTargets_();
+				if (newTargets[0] !== this.activeTargets_[0]) {
+					if (this.activeTargets_[0]) {
+						dom.removeClasses(this.activeTargets_[0], this.targetOverClass);
+						this.emit(DragDrop.Events.TARGET_LEAVE, this.buildEventObject_());
+					}
+
+					this.activeTargets_ = newTargets;
+					if (this.activeTargets_[0]) {
+						dom.addClasses(this.activeTargets_[0], this.targetOverClass);
+						this.emit(DragDrop.Events.TARGET_ENTER, this.buildEventObject_());
+					}
+				}
+			}
+		}]);
+		return DragDrop;
+	}(Drag);
+
+	/**
+  * State definition.
+  * @type {!Object}
+  * @static
+  */
+
+
+	DragDrop.STATE = {
+		/**
+   * The "aria-dropeffect" value to be set for all targets. If not set,
+   * this html attribute will have to be set manually on the targets.
+   * @type {string}
+   */
+		ariaDropEffect: {
+			validator: core.isString
+		},
+
+		/**
+   * The CSS class that should be added to drop targets when a source
+   * is being dragged over them.
+   * @type {string}
+   * @default 'dropOver'
+   */
+		targetOverClass: {
+			validator: core.isString,
+			value: 'targetOver'
+		},
+
+		/**
+   * Elements that the sources can be dropped on. Can be either a single
+   * element or a selector for multiple elements.
+   * @type {!Element|string}
+   */
+		targets: {
+			setter: 'setterTargetsFn_',
+			validator: 'validateElementOrString_'
+		}
+	};
+
+	/**
+  * Holds the names of events that can be emitted by `DragDrop`.
+  * @type {!Object}
+  * @static
+  */
+	DragDrop.Events = {
+		DRAG: 'drag',
+		END: 'end',
+		TARGET_ENTER: 'targetEnter',
+		TARGET_LEAVE: 'targetLeave'
+	};
+
+	this['metal']['DragDrop'] = DragDrop;
+}).call(this);
+'use strict';
+
+(function () {
+  var Drag = this['metal']['Drag'];
+  var DragDrop = this['metal']['DragDrop'];
+  this['metalNamed']['drag'] = this['metalNamed']['drag'] || {};
+  this['metalNamed']['drag']['Drag'] = Drag;
+  this['metalNamed']['drag']['DragDrop'] = DragDrop;
+}).call(this);
+'use strict';
+
+(function () {
+  /* jshint ignore:start */
+  var Component = this['metal']['component'];
+  var Soy = this['metal']['Soy'];
+
+  var templates;
+  goog.loadModule(function (exports) {
+
+    // This file was automatically generated from Slider.soy.
+    // Please don't edit this file by hand.
+
+    /**
+     * @fileoverview Templates in namespace Slider.
+     * @public
+     */
+
+    goog.module('Slider.incrementaldom');
+
+    /** @suppress {extraRequire} */
+    var soy = goog.require('soy');
+    /** @suppress {extraRequire} */
+    var soydata = goog.require('soydata');
+    /** @suppress {extraRequire} */
+    goog.require('goog.i18n.bidi');
+    /** @suppress {extraRequire} */
+    goog.require('goog.asserts');
+    /** @suppress {extraRequire} */
+    goog.require('goog.string');
+    var IncrementalDom = goog.require('incrementaldom');
+    var ie_open = IncrementalDom.elementOpen;
+    var ie_close = IncrementalDom.elementClose;
+    var ie_void = IncrementalDom.elementVoid;
+    var ie_open_start = IncrementalDom.elementOpenStart;
+    var ie_open_end = IncrementalDom.elementOpenEnd;
+    var itext = IncrementalDom.text;
+    var iattr = IncrementalDom.attr;
+
+    /**
+     * @param {Object<string, *>=} opt_data
+     * @param {(null|undefined)=} opt_ignored
+     * @param {Object<string, *>=} opt_ijData
+     * @return {void}
+     * @suppress {checkTypes}
+     */
+    function $render(opt_data, opt_ignored, opt_ijData) {
+      var $$temp;
+      opt_data = opt_data || {};
+      var maxNumber__soy3 = ($$temp = opt_data.max) == null ? 100 : $$temp;
+      var minNumber__soy4 = ($$temp = opt_data.min) == null ? 0 : $$temp;
+      var valueNumber__soy5 = ($$temp = opt_data.value) == null ? 0 : $$temp;
+      ie_open('div', null, null, 'class', 'slider ' + (($$temp = opt_data.elementClasses) == null ? '' : $$temp));
+      ie_open('input', null, null, 'name', ($$temp = opt_data.inputName) == null ? '' : $$temp, 'type', 'hidden', 'value', valueNumber__soy5);
+      ie_close('input');
+      ie_open('span');
+      var dyn0 = valueNumber__soy5;
+      if (typeof dyn0 == 'function') dyn0();else if (dyn0 != null) itext(dyn0);
+      ie_close('span');
+      var percentage__soy15 = 100 * (valueNumber__soy5 - minNumber__soy4) / (maxNumber__soy3 - minNumber__soy4) + '%';
+      ie_open('div', null, null, 'class', 'rail', 'data-onclick', 'onRailClick_');
+      ie_void('div', null, null, 'class', 'rail-active', 'style', 'width: ' + percentage__soy15);
+      ie_open('div', null, null, 'class', 'rail-handle', 'style', 'left: ' + percentage__soy15);
+      ie_void('div', null, null, 'class', 'handle', 'tabindex', '0', 'role', 'slider', 'aria-valuemin', minNumber__soy4, 'aria-valuemax', maxNumber__soy3, 'aria-valuenow', valueNumber__soy5);
+      ie_close('div');
+      ie_close('div');
+      ie_close('div');
+    }
+    exports.render = $render;
+    if (goog.DEBUG) {
+      $render.soyTemplateName = 'Slider.render';
+    }
+
+    exports.render.params = ["elementClasses", "inputName", "max", "min", "value"];
+    exports.render.types = { "elementClasses": "any", "inputName": "any", "max": "any", "min": "any", "value": "any" };
+    templates = exports;
+    return exports;
+  });
+
+  var Slider = function (_Component) {
+    babelHelpers.inherits(Slider, _Component);
+
+    function Slider() {
+      babelHelpers.classCallCheck(this, Slider);
+      return babelHelpers.possibleConstructorReturn(this, (Slider.__proto__ || Object.getPrototypeOf(Slider)).apply(this, arguments));
+    }
+
+    return Slider;
+  }(Component);
+
+  Soy.register(Slider, templates);
+  this['metalNamed']['Slider'] = this['metalNamed']['Slider'] || {};
+  this['metalNamed']['Slider']['Slider'] = Slider;
+  this['metalNamed']['Slider']['templates'] = templates;
+  this['metal']['Slider'] = templates;
+  /* jshint ignore:end */
+}).call(this);
+'use strict';
+
+(function () {
+	var core = this['metal']['metal'];
+	var dom = this['metal']['dom'];
+	var Component = this['metal']['component'];
+	var Drag = this['metalNamed']['drag']['Drag'];
+	var Position = this['metal']['position'];
+	var Soy = this['metal']['Soy'];
+	var templates = this['metal']['Slider'];
+
+	/**
+  * Slider component.
+  */
+
+	var Slider = function (_Component) {
+		babelHelpers.inherits(Slider, _Component);
+
+		function Slider() {
+			babelHelpers.classCallCheck(this, Slider);
+			return babelHelpers.possibleConstructorReturn(this, (Slider.__proto__ || Object.getPrototypeOf(Slider)).apply(this, arguments));
+		}
+
+		babelHelpers.createClass(Slider, [{
+			key: 'attached',
+
+			/**
+    * @inheritDoc
+    */
+			value: function attached() {
+				/**
+     * Manages dragging the rail handle to update the slider value.
+     * @type {Drag}
+     * @protected
+     */
+				this.drag_ = new Drag({
+					axis: 'x',
+					constrain: this.constrainToRail_.bind(this),
+					container: this.element,
+					handles: '.handle',
+					sources: '.rail-handle'
+				});
+				this.on('elementChanged', this.handleElementChanged_);
+
+				this.attachDragEvents_();
+			}
+
+			/**
+    * Attaches the drag events to handle value updates when dragging the rail handle.
+    * protected
+    */
+
+		}, {
+			key: 'attachDragEvents_',
+			value: function attachDragEvents_() {
+				this.drag_.on(Drag.Events.DRAG, this.updateValueFromDragData_.bind(this));
+				this.drag_.on(Drag.Events.END, this.updateValueFromDragData_.bind(this));
+			}
+
+			/**
+    * Constrains the given region to be inside the rail. This is being used
+    * instead of `Drag`'s default behavior, because `Drag` would require the
+    * whole handle to be inside the rail element, while we just want to make sure
+    * that the left side of the handle is inside it.
+    * @param {!Object} region
+    * @protected
+    */
+
+		}, {
+			key: 'constrainToRail_',
+			value: function constrainToRail_(region) {
+				var rail = this.element.querySelector('.rail');
+				var constrain = Position.getRegion(rail, true);
+				if (region.left < constrain.left) {
+					region.left = constrain.left;
+				} else if (region.left > constrain.right) {
+					region.left -= region.left - constrain.right;
+				}
+				region.right = region.left + region.width;
+			}
+
+			/**
+    * @inheritDoc
+    */
+
+		}, {
+			key: 'disposeInternal',
+			value: function disposeInternal() {
+				babelHelpers.get(Slider.prototype.__proto__ || Object.getPrototypeOf(Slider.prototype), 'disposeInternal', this).call(this);
+				this.drag_.dispose();
+			}
+
+			/**
+    * Returns the `Drag` instance being used.
+    * @return {!Drag}
+    */
+
+		}, {
+			key: 'getDrag',
+			value: function getDrag() {
+				return this.drag_;
+			}
+
+			/**
+    * Handles the `elementChanged` event. Updates the drag container to the new
+    * element, and also updates the constrain element.
+    * @param {!Object} data
+    * @protected
+    */
+
+		}, {
+			key: 'handleElementChanged_',
+			value: function handleElementChanged_(data) {
+				if (data.newVal) {
+					this.drag_.container = data.newVal;
+				}
+			}
+
+			/**
+    * Handles mouse down actions on the slider rail and updates the slider value accordingly.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'onRailClick_',
+			value: function onRailClick_(event) {
+				if (dom.hasClass(event.target, 'rail') || dom.hasClass(event.target, 'rail-active')) {
+					var prevValue = this.value;
+					this.updateValue_(event.offsetX, 0, true);
+					if (prevValue === this.value) {
+						var handleRegion = Position.getRegion(this.element.querySelector('.handle'));
+						if (event.offsetX < handleRegion.left) {
+							this.value -= 1;
+						} else {
+							this.value += 1;
+						}
+					}
+				}
+			}
+
+			/**
+    * Synchronizes the slider UI with the `max` state key.
+    * @param {number} newVal The new value of the state key.
+    */
+
+		}, {
+			key: 'syncMax',
+			value: function syncMax(newVal) {
+				if (newVal < this.value) {
+					this.value = newVal;
+				}
+			}
+
+			/**
+    * Synchronizes the slider UI with the `min` state key.
+    * @param {number} newVal The new value of the state key.
+    */
+
+		}, {
+			key: 'syncMin',
+			value: function syncMin(newVal) {
+				if (newVal > this.value) {
+					this.value = newVal;
+				}
+			}
+
+			/**
+    * Updates the slider value based on the UI state of the handle element.
+    * @param {number} handlePosition Position of the handle in px.
+    * @param {number} offset Offset to be added to normalize relative inputs.
+    * @param {boolean=} opt_relative If the given position is relative to the
+    *     rail or not.
+    * @protected
+    */
+
+		}, {
+			key: 'updateValue_',
+			value: function updateValue_(handlePosition, offset, opt_relative) {
+				var region = Position.getRegion(this.element);
+				if (!opt_relative) {
+					handlePosition -= region.left;
+				}
+				this.value = Math.round(offset + handlePosition / region.width * (this.max - this.min));
+			}
+
+			/**
+    * Handles Drag events from the rail handle and updates the slider value accordingly.
+    * @param {!Object} data
+    * @protected
+    */
+
+		}, {
+			key: 'updateValueFromDragData_',
+			value: function updateValueFromDragData_(data, event) {
+				this.updateValue_(data.x, this.min);
+				event.preventDefault();
+			}
+		}]);
+		return Slider;
+	}(Component);
+
+	Soy.register(Slider, templates);
+
+	/**
+  * `Slider`'s state definition.
+  */
+	Slider.STATE = {
+		/**
+   * Name of the hidden input field that holds the slider value. Useful when slider is embedded
+   * inside a form so it can automatically send its value.
+   * @type {string}
+   */
+		inputName: {
+			validator: core.isString
+		},
+
+		/**
+   * Defines the maximum value handled by the slider.
+   * @type {number}
+   * @default 100
+   */
+		max: {
+			value: 100
+		},
+
+		/**
+   * Defines the minimum value handled by the slider.
+   * @type {number}
+   * @default 0
+   */
+		min: {
+			value: 0
+		},
+
+		/**
+   * Defines the currently selected value on the slider.
+   * @type {number}
+   * @default 0
+   */
+		value: {
+			validator: function validator(val) {
+				return core.isNumber(val) && this.min <= val && val <= this.max;
+			},
+			value: 0
+		}
+	};
+
+	this['metal']['Slider'] = Slider;
+}).call(this);
+'use strict';
+
+(function () {
+  /* jshint ignore:start */
+  var Component = this['metal']['component'];
+  var Soy = this['metal']['Soy'];
+
+  var templates;
+  goog.loadModule(function (exports) {
+
+    // This file was automatically generated from AutocompleteBadges.soy.
+    // Please don't edit this file by hand.
+
+    /**
+     * @fileoverview Templates in namespace AutocompleteBadges.
+     * @public
+     */
+
+    goog.module('AutocompleteBadges.incrementaldom');
+
+    /** @suppress {extraRequire} */
+    var soy = goog.require('soy');
+    /** @suppress {extraRequire} */
+    var soydata = goog.require('soydata');
+    /** @suppress {extraRequire} */
+    goog.require('goog.i18n.bidi');
+    /** @suppress {extraRequire} */
+    goog.require('goog.asserts');
+    /** @suppress {extraRequire} */
+    goog.require('goog.string');
+    var IncrementalDom = goog.require('incrementaldom');
+    var ie_open = IncrementalDom.elementOpen;
+    var ie_close = IncrementalDom.elementClose;
+    var ie_void = IncrementalDom.elementVoid;
+    var ie_open_start = IncrementalDom.elementOpenStart;
+    var ie_open_end = IncrementalDom.elementOpenEnd;
+    var itext = IncrementalDom.text;
+    var iattr = IncrementalDom.attr;
+
+    /**
+     * @param {Object<string, *>=} opt_data
+     * @param {(null|undefined)=} opt_ignored
+     * @param {Object<string, *>=} opt_ijData
+     * @return {void}
+     * @suppress {checkTypes}
+     */
+    function $render(opt_data, opt_ignored, opt_ijData) {
+      var $$temp;
+      opt_data = opt_data || {};
+      ie_open('div', null, null, 'class', 'autocomplete-badges ' + (($$temp = opt_data.elementClasses) == null ? '' : $$temp));
+      ie_open('ul', null, null, 'class', 'autocomplete-badges--list', 'ref', 'badges');
+      var badgeList13 = opt_data.badges;
+      var badgeListLen13 = badgeList13.length;
+      for (var badgeIndex13 = 0; badgeIndex13 < badgeListLen13; badgeIndex13++) {
+        var badgeData13 = badgeList13[badgeIndex13];
+        ie_open('li', null, null, 'class', 'badge', 'tabindex', '-1', 'data-index', badgeIndex13, 'data-onkeydown', 'onBadgeKeyDown_');
+        ie_open('span');
+        var dyn0 = badgeData13.text;
+        if (typeof dyn0 == 'function') dyn0();else if (dyn0 != null) itext(dyn0);
+        ie_close('span');
+        ie_void('span', null, null, 'class', 'glyphicon glyphicon-remove remove', 'data-index', badgeIndex13, 'data-onclick', 'onBadgeItemClicked_');
+        ie_close('li');
+      }
+      ie_close('ul');
+      ie_open('span', null, null, 'class', 'autocomplete-field-wrapper');
+      ie_void('input', null, null, 'ref', 'input', 'autocomplete', 'off', 'class', 'autocomplete-field form-control', 'data-onkeydown', 'onInputKeyDown_');
+      ie_close('span');
+      ie_close('div');
+    }
+    exports.render = $render;
+    if (goog.DEBUG) {
+      $render.soyTemplateName = 'AutocompleteBadges.render';
+    }
+
+    exports.render.params = ["badges", "elementClasses"];
+    exports.render.types = { "badges": "any", "elementClasses": "any" };
+    templates = exports;
+    return exports;
+  });
+
+  var AutocompleteBadges = function (_Component) {
+    babelHelpers.inherits(AutocompleteBadges, _Component);
+
+    function AutocompleteBadges() {
+      babelHelpers.classCallCheck(this, AutocompleteBadges);
+      return babelHelpers.possibleConstructorReturn(this, (AutocompleteBadges.__proto__ || Object.getPrototypeOf(AutocompleteBadges)).apply(this, arguments));
+    }
+
+    return AutocompleteBadges;
+  }(Component);
+
+  Soy.register(AutocompleteBadges, templates);
+  this['metalNamed']['AutocompleteBadges'] = this['metalNamed']['AutocompleteBadges'] || {};
+  this['metalNamed']['AutocompleteBadges']['AutocompleteBadges'] = AutocompleteBadges;
+  this['metalNamed']['AutocompleteBadges']['templates'] = templates;
+  this['metal']['AutocompleteBadges'] = templates;
+  /* jshint ignore:end */
+}).call(this);
+'use strict';
+
+(function () {
+	var templates = this['metal']['AutocompleteBadges'];
+	var Autocomplete = this['metal']['autocomplete'];
+	var Component = this['metal']['component'];
+	var Soy = this['metal']['Soy'];
+
+	var AutocompleteBadges = function (_Component) {
+		babelHelpers.inherits(AutocompleteBadges, _Component);
+
+		function AutocompleteBadges() {
+			babelHelpers.classCallCheck(this, AutocompleteBadges);
+			return babelHelpers.possibleConstructorReturn(this, (AutocompleteBadges.__proto__ || Object.getPrototypeOf(AutocompleteBadges)).apply(this, arguments));
+		}
+
+		babelHelpers.createClass(AutocompleteBadges, [{
+			key: 'attached',
+
+
+			/**
+    * @inheritDoc
+    */
+			value: function attached() {
+				this.autocomplete_ = new Autocomplete({
+					inputElement: this.refs.input,
+					data: this.getFilteredElements_.bind(this)
+				});
+
+				this.autocomplete_.on('select', this.onListItemSelected_.bind(this));
+			}
+
+			/**
+    * @inheritDoc
+    */
+
+		}, {
+			key: 'disposed',
+			value: function disposed() {
+				if (this.autocomplete_) {
+					this.autocomplete_.dispose();
+				}
+			}
+
+			/**
+   * Returns the `Autocomplete` component being used to render the matched items in a list.
+   * @return {!Autocomplete}
+   */
+
+		}, {
+			key: 'getAutocomplete',
+			value: function getAutocomplete() {
+				return this.autocomplete_;
+			}
+
+			/**
+    * Recover a filtered list the according with the query search
+    * @param {String} query
+    * @return {Array} returns the filtered list
+    * @protected
+    */
+
+		}, {
+			key: 'getFilteredElements_',
+			value: function getFilteredElements_(query) {
+				return this.dataItems.filter(function (item) {
+					return query && item.toLowerCase().includes(query.toLowerCase());
+				}).sort();
+			}
+
+			/**
+    * Returns the `input` element being used to insert data.
+    * @return {!Element}
+    */
+
+		}, {
+			key: 'getInput',
+			value: function getInput() {
+				return this.refs.input;
+			}
+
+			/**
+    * Handles Badge Item click event
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'onBadgeItemClicked_',
+			value: function onBadgeItemClicked_(event) {
+				var elementDOM = event.delegateTarget;
+				var badge = this.badges[elementDOM.getAttribute('data-index')];
+				this.removeBadge_(badge);
+			}
+
+			/**
+    * Remove element from the badges list and add in element list
+    * @param badge
+    * @private
+    */
+
+		}, {
+			key: 'removeBadge_',
+			value: function removeBadge_(badge) {
+				this.dataItems.push(badge.text);
+				this.dataItems = this.dataItems;
+
+				this.badges.splice(this.badges.indexOf(badge), 1);
+				this.badges = this.badges;
+			}
+
+			/**
+    * Handles Badge Item KeyDown event
+    * @param event
+    * @private
+    */
+
+		}, {
+			key: 'onBadgeKeyDown_',
+			value: function onBadgeKeyDown_(event) {
+
+				var badgesElements = this.refs.badges.children;
+				var selectedBadge = event.delegateTarget;
+				var selectedIndex = +selectedBadge.getAttribute('data-index');
+
+				switch (event.keyCode) {
+					case KEY_CODE_LEFT_ARROW:
+						if (selectedIndex > 0) {
+							badgesElements[selectedIndex - 1].focus();
+						}
+						break;
+					case KEY_CODE_RIGTH_ARROW:
+						if (selectedIndex < badgesElements.length - 1) {
+							badgesElements[selectedIndex + 1].focus();
+						} else {
+							this.refs.input.focus();
+						}
+						break;
+
+					case KEY_CODE_BACKSPACE:
+						this.removeBadge_(this.badges[selectedIndex]);
+						if (selectedIndex > 0) {
+							badgesElements[selectedIndex - 1].focus();
+						} else {
+							this.refs.input.focus();
+						}
+						break;
+
+					case KEY_CODE_ENTER:
+						this.refs.input.value = this.badges[selectedIndex].text;
+						this.removeBadge_(this.badges[selectedIndex]);
+						this.refs.input.focus();
+						break;
+				}
+			}
+
+			/**
+    * Handles input KeyDown event
+    * @param event
+    * @returns {boolean}
+    * @private
+    */
+
+		}, {
+			key: 'onInputKeyDown_',
+			value: function onInputKeyDown_(event) {
+				var badgesElements = this.refs.badges.children;
+
+				if (this.refs.input.value !== '') {
+					return true;
+				}
+
+				switch (event.keyCode) {
+					case KEY_CODE_BACKSPACE:
+					case KEY_CODE_LEFT_ARROW:
+						if (badgesElements.length > 0) {
+							badgesElements[badgesElements.length - 1].focus();
+							return false;
+						}
+						break;
+				}
+			}
+
+			/**
+    * Remove element from the list and add in badges list
+    * @param {!Element} item The list selected item.
+    * @protected
+    */
+
+		}, {
+			key: 'onListItemSelected_',
+			value: function onListItemSelected_(item) {
+				var index = this.dataItems.indexOf(item.text);
+
+				this.badges.push(item);
+				this.badges = this.badges;
+
+				this.dataItems.splice(index, 1);
+				this.dataItems = this.dataItems;
+
+				this.refs.input.value = '';
+			}
+
+			/**
+    * Setter for dataItems
+    * A copy of data items array should be created in oreder to
+    * avoid changing the array passed to different instances
+    * @param val
+    * @returns {!Array<!Object>}
+    * @protected
+    */
+
+		}, {
+			key: 'setterDataItems_',
+			value: function setterDataItems_(val) {
+				return val.slice();
+			}
+		}]);
+		return AutocompleteBadges;
+	}(Component);
+
+	Soy.register(AutocompleteBadges, templates);
+
+	AutocompleteBadges.STATE = {
+		/**
+   * The list to store the values selected in 'dataItems' list.
+   * @type {!Array<!Object>}
+   * @default []
+   */
+		badges: {
+			validator: Array.isArray,
+			valueFn: function valueFn() {
+				return [];
+			}
+		},
+
+		/**
+   * The list items of text that will be filtered by input data.
+   * @type {!Array<!Object>}
+   * @default []
+   */
+		dataItems: {
+			validator: Array.isArray,
+			valueFn: function valueFn() {
+				return [];
+			},
+			setter: 'setterDataItems_'
+		}
+	};
+
+	var KEY_CODE_LEFT_ARROW = 37;
+	var KEY_CODE_RIGTH_ARROW = 39;
+	var KEY_CODE_BACKSPACE = 8;
+	var KEY_CODE_ENTER = 13;
+
+	this['metal']['AutocompleteBadges'] = AutocompleteBadges;
+}).call(this);
+'use strict';
+
+(function () {
 	var validators = this['metal']['state'];
 	var Ajax = this['metal']['Ajax'];
 	var core = this['metal']['metal'];
@@ -22956,6 +25278,8 @@ babelHelpers;
 	var RP = this['metal']['ReadingProgress'];
 	var List = this['metal']['List'];
 	var Autocomplete = this['metal']['autocomplete'];
+	var Slider = this['metal']['Slider'];
+	var Badges = this['metal']['AutocompleteBadges'];
 	var SampleList = this['metal']['SampleList'];
 	var IFrame = this['metal']['IFrame'];
 	/**
@@ -23057,89 +25381,6 @@ babelHelpers;
 	};
 
 	this['metal']['Playground'] = Playground;
-}).call(this);
-'use strict';
-
-(function () {
-  /* jshint ignore:start */
-  var Component = this['metal']['component'];
-  var Soy = this['metal']['Soy'];
-
-  var templates;
-  goog.loadModule(function (exports) {
-
-    // This file was automatically generated from TwoDivs.soy.
-    // Please don't edit this file by hand.
-
-    /**
-     * @fileoverview Templates in namespace TwoDivs.
-     * @public
-     */
-
-    goog.module('TwoDivs.incrementaldom');
-
-    /** @suppress {extraRequire} */
-    var soy = goog.require('soy');
-    /** @suppress {extraRequire} */
-    var soydata = goog.require('soydata');
-    /** @suppress {extraRequire} */
-    goog.require('goog.i18n.bidi');
-    /** @suppress {extraRequire} */
-    goog.require('goog.asserts');
-    /** @suppress {extraRequire} */
-    goog.require('goog.string');
-    var IncrementalDom = goog.require('incrementaldom');
-    var ie_open = IncrementalDom.elementOpen;
-    var ie_close = IncrementalDom.elementClose;
-    var ie_void = IncrementalDom.elementVoid;
-    var ie_open_start = IncrementalDom.elementOpenStart;
-    var ie_open_end = IncrementalDom.elementOpenEnd;
-    var itext = IncrementalDom.text;
-    var iattr = IncrementalDom.attr;
-
-    /**
-     * @param {Object<string, *>=} opt_data
-     * @param {(null|undefined)=} opt_ignored
-     * @param {Object<string, *>=} opt_ijData
-     * @return {void}
-     * @suppress {checkTypes}
-     */
-    function $render(opt_data, opt_ignored, opt_ijData) {
-      ie_open('div');
-      itext('X');
-      ie_close('div');
-      ie_open('div');
-      itext('Y');
-      ie_close('div');
-    }
-    exports.render = $render;
-    if (goog.DEBUG) {
-      $render.soyTemplateName = 'TwoDivs.render';
-    }
-
-    exports.render.params = [];
-    exports.render.types = {};
-    templates = exports;
-    return exports;
-  });
-
-  var TwoDivs = function (_Component) {
-    babelHelpers.inherits(TwoDivs, _Component);
-
-    function TwoDivs() {
-      babelHelpers.classCallCheck(this, TwoDivs);
-      return babelHelpers.possibleConstructorReturn(this, (TwoDivs.__proto__ || Object.getPrototypeOf(TwoDivs)).apply(this, arguments));
-    }
-
-    return TwoDivs;
-  }(Component);
-
-  Soy.register(TwoDivs, templates);
-  this['metalNamed']['TwoDivs'] = this['metalNamed']['TwoDivs'] || {};
-  this['metalNamed']['TwoDivs']['TwoDivs'] = TwoDivs;
-  this['metalNamed']['TwoDivs']['templates'] = templates;
-  this['metal']['TwoDivs'] = templates;
-  /* jshint ignore:end */
 }).call(this);
 }).call(this);
 //# sourceMappingURL=playground.js.map
