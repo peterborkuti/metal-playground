@@ -18,6 +18,7 @@ import List from 'metal-list';
 import Autocomplete from 'metal-autocomplete';
 import Slider from 'metal-slider';
 import Badges from 'metal-autocomplete-badges';
+import Treeview from 'metal-treeview';
 
 
 import SampleList from './SampleList';

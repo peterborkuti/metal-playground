@@ -25070,6 +25070,414 @@ babelHelpers;
 'use strict';
 
 (function () {
+  /* jshint ignore:start */
+  var Component = this['metal']['component'];
+  var Soy = this['metal']['Soy'];
+
+  var templates;
+  goog.loadModule(function (exports) {
+
+    // This file was automatically generated from Treeview.soy.
+    // Please don't edit this file by hand.
+
+    /**
+     * @fileoverview Templates in namespace Treeview.
+     * @public
+     */
+
+    goog.module('Treeview.incrementaldom');
+
+    /** @suppress {extraRequire} */
+    var soy = goog.require('soy');
+    /** @suppress {extraRequire} */
+    var soydata = goog.require('soydata');
+    /** @suppress {extraRequire} */
+    goog.require('goog.i18n.bidi');
+    /** @suppress {extraRequire} */
+    goog.require('goog.asserts');
+    /** @suppress {extraRequire} */
+    goog.require('goog.string');
+    var IncrementalDom = goog.require('incrementaldom');
+    var ie_open = IncrementalDom.elementOpen;
+    var ie_close = IncrementalDom.elementClose;
+    var ie_void = IncrementalDom.elementVoid;
+    var ie_open_start = IncrementalDom.elementOpenStart;
+    var ie_open_end = IncrementalDom.elementOpenEnd;
+    var itext = IncrementalDom.text;
+    var iattr = IncrementalDom.attr;
+
+    /**
+     * @param {Object<string, *>=} opt_data
+     * @param {(null|undefined)=} opt_ignored
+     * @param {Object<string, *>=} opt_ijData
+     * @return {void}
+     * @suppress {checkTypes}
+     */
+    function $render(opt_data, opt_ignored, opt_ijData) {
+      ie_open('div', null, null, 'class', 'treeview' + (opt_data.elementClasses ? ' ' + opt_data.elementClasses : ''));
+      $nodes(opt_data, null, opt_ijData);
+      ie_close('div');
+    }
+    exports.render = $render;
+    if (goog.DEBUG) {
+      $render.soyTemplateName = 'Treeview.render';
+    }
+
+    /**
+     * @param {Object<string, *>=} opt_data
+     * @param {(null|undefined)=} opt_ignored
+     * @param {Object<string, *>=} opt_ijData
+     * @return {void}
+     * @suppress {checkTypes}
+     */
+    function $nodes(opt_data, opt_ignored, opt_ijData) {
+      if (opt_data.nodes) {
+        ie_open('ul', null, null, 'class', 'treeview-nodes', 'role', 'tree');
+        var nodeList19 = opt_data.nodes;
+        var nodeListLen19 = nodeList19.length;
+        for (var nodeIndex19 = 0; nodeIndex19 < nodeListLen19; nodeIndex19++) {
+          var nodeData19 = nodeList19[nodeIndex19];
+          var index__soy14 = nodeIndex19;
+          $node({ lastFocusedRef_: opt_data.lastFocusedRef_, node: nodeData19, path: opt_data.parentPath != null ? opt_data.parentPath + '-' + index__soy14 : index__soy14 }, null, opt_ijData);
+        }
+        ie_close('ul');
+      }
+    }
+    exports.nodes = $nodes;
+    if (goog.DEBUG) {
+      $nodes.soyTemplateName = 'Treeview.nodes';
+    }
+
+    /**
+     * @param {Object<string, *>=} opt_data
+     * @param {(null|undefined)=} opt_ignored
+     * @param {Object<string, *>=} opt_ijData
+     * @return {void}
+     * @suppress {checkTypes}
+     */
+    function $node(opt_data, opt_ignored, opt_ijData) {
+      var focusRef__soy23 = opt_data.lastFocusedRef_ ? opt_data.lastFocusedRef_ : 'node-0';
+      var ref__soy24 = 'node-' + opt_data.path;
+      ie_open_start('li');
+      iattr('class', 'treeview-node');
+      iattr('data-treeview-path', opt_data.path);
+      iattr('data-onkeyup', 'handleNodeKeyUp_');
+      $ariaExpanded(opt_data, null, opt_ijData);
+      iattr('role', 'treeitem');
+      iattr('tabindex', focusRef__soy23 == ref__soy24 ? '0' : '-1');
+      iattr('ref', ref__soy24);
+      ie_open_end();
+      if (opt_data.node) {
+        ie_open('div', null, null, 'class', 'treeview-node-wrapper' + (opt_data.node.expanded ? ' expanded' : ''));
+        ie_open('div', null, null, 'class', 'treeview-node-main clearfix' + (opt_data.node.children ? ' hasChildren' : ''), 'data-onclick', 'handleNodeClicked_');
+        if (opt_data.node.children) {
+          ie_void('div', null, null, 'class', 'treeview-node-toggler');
+        }
+        ie_open('span', null, null, 'class', 'treeview-node-name');
+        var dyn0 = opt_data.node.name;
+        if (typeof dyn0 == 'function') dyn0();else if (dyn0 != null) itext(dyn0);
+        ie_close('span');
+        ie_close('div');
+        $nodes({ lastFocusedRef_: opt_data.lastFocusedRef_, nodes: opt_data.node.children, parentPath: opt_data.path }, null, opt_ijData);
+        ie_close('div');
+      }
+      ie_close('li');
+    }
+    exports.node = $node;
+    if (goog.DEBUG) {
+      $node.soyTemplateName = 'Treeview.node';
+    }
+
+    /**
+     * @param {Object<string, *>=} opt_data
+     * @param {(null|undefined)=} opt_ignored
+     * @param {Object<string, *>=} opt_ijData
+     * @return {void}
+     * @suppress {checkTypes}
+     */
+    function $ariaExpanded(opt_data, opt_ignored, opt_ijData) {
+      if (opt_data.node.children) {
+        iattr('aria-expanded', opt_data.node.expanded ? 'true' : 'false');
+      }
+    }
+    exports.ariaExpanded = $ariaExpanded;
+    if (goog.DEBUG) {
+      $ariaExpanded.soyTemplateName = 'Treeview.ariaExpanded';
+    }
+
+    exports.render.params = ["elementClasses", "lastFocusedRef_", "nodes"];
+    exports.render.types = { "elementClasses": "any", "lastFocusedRef_": "any", "nodes": "any" };
+    exports.nodes.params = ["lastFocusedRef_", "nodes", "parentPath"];
+    exports.nodes.types = { "lastFocusedRef_": "any", "nodes": "any", "parentPath": "any" };
+    exports.node.params = ["lastFocusedRef_", "node", "path"];
+    exports.node.types = { "lastFocusedRef_": "any", "node": "any", "path": "any" };
+    exports.ariaExpanded.params = ["node"];
+    exports.ariaExpanded.types = { "node": "any" };
+    templates = exports;
+    return exports;
+  });
+
+  var Treeview = function (_Component) {
+    babelHelpers.inherits(Treeview, _Component);
+
+    function Treeview() {
+      babelHelpers.classCallCheck(this, Treeview);
+      return babelHelpers.possibleConstructorReturn(this, (Treeview.__proto__ || Object.getPrototypeOf(Treeview)).apply(this, arguments));
+    }
+
+    return Treeview;
+  }(Component);
+
+  Soy.register(Treeview, templates);
+  this['metalNamed']['Treeview'] = this['metalNamed']['Treeview'] || {};
+  this['metalNamed']['Treeview']['Treeview'] = Treeview;
+  this['metalNamed']['Treeview']['templates'] = templates;
+  this['metal']['Treeview'] = templates;
+  /* jshint ignore:end */
+}).call(this);
+'use strict';
+
+(function () {
+	var core = this['metal']['metal'];
+	var templates = this['metal']['Treeview'];
+	var Component = this['metal']['component'];
+	var KeyboardFocusManager = this['metal']['KeyboardFocusManager'];
+	var Soy = this['metal']['Soy'];
+
+	/**
+  * Treeview component.
+  */
+
+	var Treeview = function (_Component) {
+		babelHelpers.inherits(Treeview, _Component);
+
+		function Treeview() {
+			babelHelpers.classCallCheck(this, Treeview);
+			return babelHelpers.possibleConstructorReturn(this, (Treeview.__proto__ || Object.getPrototypeOf(Treeview)).apply(this, arguments));
+		}
+
+		babelHelpers.createClass(Treeview, [{
+			key: 'attached',
+
+			/**
+    * @inheritDoc
+    */
+			value: function attached() {
+				this.keyboardFocusManager_ = new KeyboardFocusManager(this, 'li').setFocusHandler(this.handleNextFocus_.bind(this)).start();
+				this.keyboardFocusManager_.on(KeyboardFocusManager.EVENT_FOCUSED, this.handleKeyboardFocused_.bind(this));
+			}
+
+			/**
+    * @inheritDoc
+    */
+
+		}, {
+			key: 'disposed',
+			value: function disposed() {
+				this.keyboardFocusManager_.dispose();
+				this.keyboardFocusManager_ = null;
+			}
+
+			/**
+    * Gets the node object from the `nodes` state that is located at the given
+    * index path.
+    * @param {!Array<number>} path An array of indexes indicating where the
+    *   searched node is located inside the `nodes` state.
+    * @return {!Object}
+    */
+
+		}, {
+			key: 'getNodeObj',
+			value: function getNodeObj(path) {
+				var obj = this.nodes[path[0]];
+				for (var i = 1; i < path.length; i++) {
+					obj = obj.children[path[i]];
+				}
+				return obj;
+			}
+
+			/**
+    * Gets the treeview path for a given node.
+    * @param {!Element} node
+    * @return {!Array<string>}
+    * @protected
+    */
+
+		}, {
+			key: 'getPath_',
+			value: function getPath_(node) {
+				return node.getAttribute('data-treeview-path').split('-');
+			}
+
+			/**
+    * Handles the `focused` event from `KeyboardFocusManager`. Stores the ref
+    * of the last focused tree item so that we can retain it in the tab order
+    * when the user leaves the tree.
+    * @param {!Object} data
+    * @protected
+    */
+
+		}, {
+			key: 'handleKeyboardFocused_',
+			value: function handleKeyboardFocused_(data) {
+				this.lastFocusedRef_ = data.ref;
+			}
+
+			/**
+    * Handles the left arrow being pressed. If the node is expanded, it will be
+    * closed. If it's closed, its parent's ref will be returned so it can be
+    * focused by `KeyboardFocusManager`.
+    * @param {!Array<string>} path
+    * @param {!Object} obj
+    * @return {?string}
+    * @protected
+    */
+
+		}, {
+			key: 'handleLeftArrow_',
+			value: function handleLeftArrow_(path, obj) {
+				if (obj.expanded) {
+					obj.expanded = false;
+					this.nodes = this.nodes;
+				} else if (path.length > 1) {
+					path.pop();
+					return Treeview.NODE_REF_PREFIX + path.join('-');
+				}
+			}
+
+			/**
+    * Handles focus through keyboard.
+    * @param {!Event} event
+    * @return {boolean|string|Element}
+    * @protected
+    */
+
+		}, {
+			key: 'handleNextFocus_',
+			value: function handleNextFocus_(event) {
+				event.stopPropagation();
+
+				var path = this.getPath_(event.delegateTarget);
+				var obj = this.getNodeObj(path);
+				switch (event.keyCode) {
+					case 37:
+						return this.handleLeftArrow_(path, obj);
+					case 39:
+						return this.handleRightArrow_(path, obj);
+					default:
+						// Use default behavior for other keys (like up/down arrows).
+						return true;
+				}
+			}
+
+			/**
+    * This is called when one of this tree view's nodes is clicked.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleNodeClicked_',
+			value: function handleNodeClicked_(event) {
+				this.toggleExpandedState_(event.delegateTarget.parentNode.parentNode);
+			}
+
+			/**
+    * This is called when one of this tree view's nodes receives a keypress.
+    * If the pressed key is ENTER or SPACE, the node's expanded state will be toggled.
+    * @param {!Event} event
+    * @protected
+    */
+
+		}, {
+			key: 'handleNodeKeyUp_',
+			value: function handleNodeKeyUp_(event) {
+				if (event.keyCode === 13 || event.keyCode === 32) {
+					this.toggleExpandedState_(event.delegateTarget);
+					event.stopPropagation();
+				}
+			}
+
+			/**
+    * Handles the right arrow being pressed. If the node is closed, it will be
+    * expanded. If it's already expanded, the ref of its first child will be
+    * returned so it can be focused by `KeyboardFocusManager`.
+    * @param {!Array<string>} path
+    * @param {!Object} obj
+    * @return {?string}
+    * @protected
+    */
+
+		}, {
+			key: 'handleRightArrow_',
+			value: function handleRightArrow_(path, obj) {
+				if (obj.expanded) {
+					path.push(0);
+					return Treeview.NODE_REF_PREFIX + path.join('-');
+				} else if (obj.children) {
+					obj.expanded = true;
+					this.nodes = this.nodes;
+				}
+			}
+
+			/**
+    * Toggles the expanded state for the given tree node.
+    * @param {!Element} node
+    * @protected
+    */
+
+		}, {
+			key: 'toggleExpandedState_',
+			value: function toggleExpandedState_(node) {
+				var nodeObj = this.getNodeObj(this.getPath_(node));
+				nodeObj.expanded = !nodeObj.expanded;
+				this.nodes = this.nodes;
+			}
+		}]);
+		return Treeview;
+	}(Component);
+
+	Soy.register(Treeview, templates);
+
+	// The prefix used for tree item nodes' refs.
+	Treeview.NODE_REF_PREFIX = 'node-';
+
+	/**
+  * Treeview state definition.
+  * @type {!Object}
+  * @static
+  */
+	Treeview.STATE = {
+		/**
+   * The ref of the last item that has been focused, so that we can retain only
+   * that node in the tab order.
+   * @type {string}
+   */
+		lastFocusedRef_: {
+			internal: true,
+			validator: core.isString
+		},
+
+		/**
+   * This tree view's nodes. Each node should have a name, and can optionally
+   * have nested children nodes. It should also indicate if its children are
+   * expanded or not.
+   * @type {Array<!{children: Array, expanded: boolean?, name: string}>}
+   * @default []
+   */
+		nodes: {
+			validator: Array.isArray,
+			valueFn: function valueFn() {
+				return [];
+			}
+		}
+	};
+
+	this['metal']['Treeview'] = Treeview;
+}).call(this);
+'use strict';
+
+(function () {
 	var validators = this['metal']['state'];
 	var Ajax = this['metal']['Ajax'];
 	var core = this['metal']['metal'];
@@ -25280,6 +25688,7 @@ babelHelpers;
 	var Autocomplete = this['metal']['autocomplete'];
 	var Slider = this['metal']['Slider'];
 	var Badges = this['metal']['AutocompleteBadges'];
+	var Treeview = this['metal']['Treeview'];
 	var SampleList = this['metal']['SampleList'];
 	var IFrame = this['metal']['IFrame'];
 	/**

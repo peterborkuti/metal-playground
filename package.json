@@ -44,8 +44,8 @@
     "metal-autocomplete": "^2.0.3",
     "metal-autocomplete-badges": "^0.1.1",
     "metal-alert": "^2.0.3",
+    "metal-treeview": "^2.1.0",
     "metal-components": "^2.3.3"
-
   },
   "devDependencies": {
     "babel-cli": "^6.24.0",
