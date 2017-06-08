@@ -18,7 +18,7 @@
   "scripts": {
     "compile": "babel --presets metal -d lib/ src/",
     "prepublish": "gulp soy && npm run compile",
-    "test": "gulp test"
+    "test": "jest"
   },
   "keywords": [
     "metal",
@@ -34,7 +34,6 @@
     "metal-soy": "^2.7.0",
     "metal-ajax": "^2.0.3",
     "metal-select": "^2.0.4",
-
     "metal-tabs": "^2.3.0",
     "metal-toggler": "^2.0.0",
     "metal-tooltip": "^2.0.3",
@@ -49,8 +48,11 @@
   },
   "devDependencies": {
     "babel-cli": "^6.24.0",
+    "babel-jest": "^20.0.3",
+    "babel-preset-jest": "^20.0.3",
     "babel-preset-metal": "^4.1.0",
     "gulp": "^3.9.1",
-    "gulp-metal": "^1.11.2"
+    "gulp-metal": "^1.11.2",
+    "jest": "^20.0.4"
   }
 }
